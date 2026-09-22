@@ -1,0 +1,34 @@
+[project]
+name = "health-cloud"
+version = "0.1.0"
+description = "Self-hosted Google Health data pipeline and dashboard"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "sqlmodel>=0.0.22",
+    "psycopg[binary]>=3.2",
+    "pydantic-settings>=2.7",
+    "requests>=2.32",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    # Required by fastapi.testclient.TestClient. Our own outbound HTTP calls
+    # use `requests`; httpx is here only because Starlette's test client is
+    # built on it. Starlette now wants httpx2 specifically.
+    "httpx2>=0.28",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# The import root: modules are addressed as `server.module.submodule`.
+packages = ["server"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

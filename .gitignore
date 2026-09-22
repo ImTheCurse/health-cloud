@@ -1,0 +1,23 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets
+google-credentials.json
+.env
+*.key
+
+# Node
+node_modules/
+client/dist/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
