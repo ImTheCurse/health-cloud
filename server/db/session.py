@@ -12,7 +12,8 @@ from sqlmodel import Session, SQLModel, create_engine
 import server.models  # noqa: F401
 from server.config.settings import get_settings
 
-_engine = create_engine(get_settings().database_url, echo=True)
+_settings = get_settings()
+_engine = create_engine(_settings.database_url, echo=_settings.sql_echo)
 
 
 @contextmanager

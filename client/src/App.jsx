@@ -1,122 +1,139 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useCallback, useEffect, useState } from "react";
 
-function App() {
-  const [count, setCount] = useState(0)
+import SignalField from "./SignalField.jsx";
+import { connectUrl, fetchAccount, signOut } from "./api.js";
+
+const LOADING = "loading";
+const DISCONNECTED = "disconnected";
+const RECORDING = "recording";
+const UNREACHABLE = "unreachable";
+
+export default function App() {
+  const [state, setState] = useState(LOADING);
+  const [account, setAccount] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const result = await fetchAccount();
+      setAccount(result);
+      setState(result ? RECORDING : DISCONNECTED);
+    } catch {
+      setState(UNREACHABLE);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const connect = () => window.location.assign(connectUrl);
+
+  const disconnect = async () => {
+    await signOut();
+    setAccount(null);
+    setState(DISCONNECTED);
+  };
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
+    <main className="page">
+      <header className="masthead">
+        <span className="wordmark">health·cloud</span>
+        <span className="state">{describeState(state, account)}</span>
+      </header>
+
+      <SignalField recording={state === RECORDING} />
+
+      {state === LOADING && <Panel title="Checking the recorder." />}
+
+      {state === UNREACHABLE && (
+        <Panel title="The recorder isn't answering.">
           <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
+            Nothing is listening on localhost:8000. Start it with{" "}
+            <code>uv run uvicorn server.main:app --reload</code>, then reload
+            this page.
           </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+        </Panel>
+      )}
 
-      <div className="ticks"></div>
+      {state === DISCONNECTED && (
+        <Panel title="Nothing recorded yet.">
+          <p>
+            This server holds no measurements. Connect Google Health and your
+            steps, sleep and heart rate begin recording here, on hardware you
+            own.
+          </p>
+          <p className="aside">
+            Google will warn you that this app is unverified. It is — it is
+            yours, and it reads your data without writing anything back.
+          </p>
+          <button type="button" className="action" onClick={connect}>
+            Connect Google Health
+          </button>
+        </Panel>
+      )}
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+      {state === RECORDING && account && (
+        <Panel title={account.needs_reconsent ? "Recording stopped." : "Recording."}>
+          <Readout account={account} />
+          <div className="actions">
+            <button type="button" className="action" onClick={connect}>
+              {account.needs_reconsent ? "Reconnect Google Health" : "Renew connection"}
+            </button>
+            <button type="button" className="action quiet" onClick={disconnect}>
+              Sign out
+            </button>
+          </div>
+        </Panel>
+      )}
+    </main>
+  );
 }
 
-export default App
+function Panel({ title, children }) {
+  return (
+    <section className="panel">
+      <h1>{title}</h1>
+      {children}
+    </section>
+  );
+}
+
+function Readout({ account }) {
+  const days = account.days_until_reconsent;
+  const expiring = account.needs_reconsent || days < 2;
+
+  return (
+    <dl className="readout">
+      <div>
+        <dt>Account</dt>
+        <dd>{account.email ?? account.health_user_id}</dd>
+      </div>
+      <div>
+        <dt>Health permissions</dt>
+        <dd>
+          <span className="figure">{healthScopeCount(account)}</span> read-only
+        </dd>
+      </div>
+      <div>
+        <dt>Connection expires</dt>
+        <dd className={expiring ? "expiring" : undefined}>
+          <span className="figure">{Math.max(days, 0).toFixed(1)}</span> days from now
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
+// Google grants openid, email and profile alongside the health scopes, so the
+// raw list is longer than the data access actually granted.
+function healthScopeCount(account) {
+  return account.granted_scopes.filter((scope) => scope.includes("googlehealth"))
+    .length;
+}
+
+function describeState(state, account) {
+  if (state === LOADING) return "checking";
+  if (state === UNREACHABLE) return "offline";
+  if (state === DISCONNECTED) return "not connected";
+  return account?.needs_reconsent ? "needs reconnecting" : "connected";
+}

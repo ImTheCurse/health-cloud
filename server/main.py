@@ -3,8 +3,10 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-from server.api import health
+from server.api import auth, health
+from server.config.settings import get_settings
 from server.db.session import create_all
 
 
@@ -15,4 +17,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="health-cloud", lifespan=lifespan)
+
+# The browser must send the session cookie, so credentials are allowed and
+# origins are listed explicitly -- a wildcard is rejected in that mode.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_settings().allowed_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 app.include_router(health.router)
+app.include_router(auth.router)

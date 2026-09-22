@@ -1,0 +1,199 @@
+:root {
+  --paper: #e7ecee;
+  --paper-sunk: #dce3e6;
+  --ink: #0f1c23;
+  --ink-soft: #566871;
+  --rule: #c4cfd4;
+  --signal: #b4690e;
+  --alert: #8c2f1e;
+
+  --measure: 58ch;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 3rem 1rem 5rem;
+}
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.wordmark {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.state {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+
+/* The hero: an empty measurement field until there is something to record. */
+.field {
+  display: block;
+  width: 100%;
+  height: clamp(120px, 22vw, 180px);
+  margin: 2.5rem 0 3rem;
+  background: var(--paper-sunk);
+}
+
+.field-grid line {
+  stroke: var(--rule);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.field-baseline {
+  stroke: var(--ink-soft);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.field-trace {
+  fill: none;
+  stroke: var(--signal);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 1400;
+  stroke-dashoffset: 1400;
+  animation: trace 1.6s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+}
+
+@keyframes trace {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+h1 {
+  margin: 0 0 1rem;
+  font-family: Newsreader, Georgia, serif;
+  font-weight: 300;
+  font-size: clamp(2rem, 6vw, 3rem);
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+}
+
+.panel p {
+  max-width: var(--measure);
+  margin: 0 0 1rem;
+}
+
+.aside {
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+}
+
+code {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.875em;
+  background: var(--paper-sunk);
+  padding: 0.1em 0.35em;
+}
+
+/* Measured values only. Labels stay in the body face. */
+.figure {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-weight: 500;
+  font-size: 1.125em;
+}
+
+.readout {
+  margin: 0 0 2rem;
+  border-top: 1px solid var(--rule);
+}
+
+.readout > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.5rem;
+  justify-content: space-between;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.readout dt {
+  color: var(--ink-soft);
+}
+
+.readout dd {
+  margin: 0;
+}
+
+.expiring {
+  color: var(--alert);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.action {
+  font: inherit;
+  font-weight: 500;
+  color: var(--paper);
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  padding: 0.7rem 1.25rem;
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--signal);
+  border-color: var(--signal);
+}
+
+.action.quiet {
+  color: var(--ink);
+  background: transparent;
+  border-color: var(--rule);
+}
+
+.action.quiet:hover {
+  color: var(--ink);
+  background: transparent;
+  border-color: var(--ink);
+}
+
+.action:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .field-trace {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}

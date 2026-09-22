@@ -68,6 +68,8 @@ workers, where retries are free.
 | DB driver | `psycopg` (sync) |
 | Concurrency | Synchronous — SQLModel has no async engine |
 | Outbound HTTP | `requests` |
+| OAuth flow | `google-auth-oauthlib` |
+| Crypto | `cryptography` AES-256-GCM for tokens at rest; PyJWT HS256 for session cookies; Tink **only** for Google's webhook signature keyset (step 3) |
 | Queue | pgqueuer (Postgres-backed) |
 | Orchestration | Dagster |
 | Frontend | React |
@@ -96,6 +98,16 @@ workers, where retries are free.
   all. It exposes no `create_async_engine`, so async would require reaching into
   `sqlalchemy.ext.asyncio`. Sync also fixes the driver as `psycopg`, not
   `asyncpg`. FastAPI runs sync endpoints in a threadpool, which is ample here.
+- **Tink only where Google requires it.** Google publishes its webhook
+  signing keys as a Tink keyset, so Tink verifies those. Using Tink for our
+  own secrets would mean cleartext keysets and `secret_key_access.TOKEN`,
+  plus a generator command, since a Tink keyset cannot be hand-written.
+  `cryptography` and PyJWT take plain hex keys instead.
+- **Classes over module-level functions.** Collaborators take configuration
+  through `__init__` and never read settings themselves, so they are
+  constructible in tests without an environment. `server/providers.py` is
+  the single wiring point, and its `lru_cache` factories are the only
+  shared instances. Constants live in each module's `const.py`.
 - **`requests` for outbound HTTP.** `httpx2` remains a dev-only dependency
   because Starlette's `TestClient` is built on it; it is not used for our own
   calls.
@@ -111,7 +123,8 @@ Google-only. One flow covers both signing in to the web UI and granting Health
 consent. There is no password registration — which removes password storage,
 resets, and credential stuffing from the threat model entirely.
 
-- **Scopes:** read-only, all 9 (`activity_and_fitness`, `ecg`,
+- **Scopes:** read-only, all 9, plus `openid` / `email` / `profile` for the
+  session's identity (non-restricted, same single consent screen) (`activity_and_fitness`, `ecg`,
   `health_metrics_and_measurements`, `irn`, `location`, `nutrition`, `profile`,
   `settings`, `sleep`). No write scopes: nothing writes back to Google.
 - **Session:** self-signed short-lived JWT (30–60 min) in an
@@ -126,6 +139,8 @@ resets, and credential stuffing from the threat model entirely.
 - **Client credentials:** `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in `.env`.
   They identify the *app*, not a user, so they are config — not something a UI
   form accepts and stores.
+- **CORS:** the API lists allowed origins explicitly (`CORS_ORIGINS`) with
+  `allow_credentials=True`; a wildcard is rejected by browsers in that mode.
 - **Cookie domain:** client and API must share a registrable domain
   (e.g. `app.<domain>` + `api.<domain>`) for cookie auth to work across the two
   deployments.
@@ -269,7 +284,7 @@ Progress marker — tick a box only when the step is genuinely complete.
 
 - [x] **1. Project skeleton** — monorepo `server/` + `client/`, docker-compose
       Postgres, `.env` scaffold, add `.env` to `.gitignore`
-- [ ] **2. Google OAuth end to end** — consent flow, encrypted token storage,
+- [x] **2. Google OAuth end to end** — consent flow, encrypted token storage,
       JWT cookie session, one-click re-consent
 - [ ] **3. Webhook receiver** — signature verification, 200/401 handshake, 204
       ack, enqueue to pgqueuer, **with pytest coverage**
@@ -295,10 +310,10 @@ user, rather than assuming.
 
 | Decision | Needed by | Notes |
 | --- | --- | --- |
-| Token encryption library and key env var | Step 2 | `cryptography` Fernet vs Tink AEAD. Key lives in `.env` for now; a mounted key file is the eventual server-side answer |
+| ~~Token encryption library~~ | ~~Step 2~~ | **Settled: not Tink.** `cryptography` AES-256-GCM (`TOKEN_ENCRYPTION_KEY`) and PyJWT HS256 (`SESSION_SECRET`), both plain `openssl rand -hex 32` values. Tink is reserved for verifying Google's published webhook keyset, which needs no secret key material |
 | Push alert service | Step 7 | ntfy vs Gotify — likely whichever is already running on the self-hosted box |
 | How `client/` is served in production | Step 6 / 8 | Tooling settled at step 1: **Vite + React (JavaScript)**. Still open: static build served from the same host as the API, sharing a registrable domain for cookie auth |
-| Role of the existing `google-credentials.json` | Step 2 | Client ID/secret go in `.env`, so the downloaded file may be redundant — confirm before relying on either |
+| ~~Role of `google-credentials.json`~~ | ~~Step 2~~ | **Settled: none.** Client ID/secret live in `.env`; the file is kept but unused |
 
 ## Deferred
 

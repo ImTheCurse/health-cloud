@@ -11,6 +11,10 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "pydantic-settings>=2.7",
     "requests>=2.32",
+    "google-auth-oauthlib>=1.4.1",
+    "tink>=1.16.1",
+    "pyjwt>=2.14.0",
+    "cryptography>=50.0.1",
 ]
 
 [dependency-groups]

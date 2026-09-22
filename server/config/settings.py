@@ -28,6 +28,35 @@ class Settings(BaseSettings):
     log_level: str
     database_url: str
 
+    #: Echo every statement and its bound parameters to the log. Keep off
+    #: outside local debugging: the users table holds email, display name
+    #: and Google subject id, and data_points will hold measurements.
+    sql_echo: bool
+
+    # --- Google OAuth ---
+    google_client_id: str
+    google_client_secret: str
+    google_redirect_uri: str
+
+    # --- Secrets, hex encoded: openssl rand -hex 32 ---
+    token_encryption_key: str
+    session_secret: str
+
+    # --- CORS: exact origins allowed to send credentialed requests ---
+    # Comma separated. Never '*' -- browsers reject a wildcard when
+    # credentials are included.
+    cors_origins: str
+
+    # --- Session cookie ---
+    session_ttl_minutes: int
+    cookie_secure: bool
+    frontend_url: str
+
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
 
 @lru_cache
 def get_settings() -> Settings:
