@@ -54,12 +54,18 @@ def test_create_registers_the_secret_with_its_bearer_scheme():
     assert secret == authorization_value("s3cret") == "Bearer s3cret"
 
 
-def test_create_reports_the_verified_state():
-    session = FakeSession(*created_subscriber("ACTIVE"))
+def test_create_reads_back_the_stored_subscriber():
+    """There is no `get` and no state to poll, so create confirms by listing.
+
+    Reaching this point at all is the verification result: a failed handshake
+    fails the call with FAILED_PRECONDITION instead.
+    """
+    session = FakeSession(*created_subscriber())
 
     result = SubscriberClient(PROJECT, session).create(VALID_ID, VALID_ENDPOINT, "s")
 
-    assert result["state"] == "ACTIVE"
+    assert result["endpointUri"] == VALID_ENDPOINT
+    assert result["endpointAuthorization"]["secretSet"] is True
 
 
 def test_patch_repoints_with_an_update_mask():

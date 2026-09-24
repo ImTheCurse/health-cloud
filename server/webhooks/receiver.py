@@ -12,7 +12,7 @@ import hmac
 import json
 
 from server.webhooks.const import VERIFICATION_TYPE
-from server.webhooks.error import SignatureError
+from server.webhooks.error import NotificationError
 
 
 class EndpointAuthorizer:
@@ -59,12 +59,35 @@ def is_verification_request(body: bytes) -> bool:
     return payload == {"type": VERIFICATION_TYPE}
 
 
-def parse_notification(body: bytes) -> dict:
-    """Parse a verified notification body."""
+def parse_notification(body: bytes) -> list[dict]:
+    """Unwrap the change pointers a verified notification carries.
+
+    Google delivers a JSON *array* of envelopes, each holding the pointer
+    under a ``data`` key, and one delivery can batch several::
+
+        [{"data": {"version": "1", "dataType": "sleep", "intervals": [...]}}]
+
+    A bare object is accepted too: the documented example shows one, and
+    treating it as a single pointer costs nothing.
+
+    Returns:
+        One dict per change pointer, in delivery order.
+    """
     try:
         payload = json.loads(body)
     except ValueError as exc:
-        raise SignatureError(f"notification body is not valid JSON: {exc}") from exc
-    if not isinstance(payload, dict):
-        raise SignatureError("notification body is not a JSON object")
-    return payload
+        raise NotificationError(f"body is not valid JSON: {exc}") from exc
+
+    envelopes = payload if isinstance(payload, list) else [payload]
+    pointers = []
+    for envelope in envelopes:
+        if not isinstance(envelope, dict):
+            raise NotificationError("entry is not a JSON object")
+        pointer = envelope.get("data", envelope)
+        if not isinstance(pointer, dict):
+            raise NotificationError("entry's 'data' is not a JSON object")
+        pointers.append(pointer)
+
+    if not pointers:
+        raise NotificationError("body carried no change pointers")
+    return pointers

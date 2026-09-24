@@ -6,12 +6,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from server.api import auth, health, webhooks
+from server.config.logging import configure_logging
 from server.config.settings import get_settings
 from server.db.session import create_all
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_logging()
     create_all()
     yield
 

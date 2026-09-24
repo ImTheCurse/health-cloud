@@ -20,18 +20,72 @@ from server.webhooks.const import authorization_value
 SECRET = "test-secret"
 AUTH = authorization_value(SECRET)
 
-#: A change pointer, the only thing Google's webhook delivers. The values are
-#: never fetched from here -- the server queries the Health API for those.
-NOTIFICATION = json.dumps(
-    {
+# The structure below was taken from a live delivery, but every real value in
+# it has been replaced with an invented one of the same form, to keep personal
+# and account data out of the repository. What was substituted:
+#
+#   clientProvidedSubscriptionName  held the real GCP project number and
+#                                   subscriber id, both readable by anyone
+#                                   with the repo
+#   recordId                        identified a real health record
+#   the interval times              were a real sleep window, and the gap
+#                                   between the physical and civil forms gave
+#                                   away the timezone it happened in
+#
+# The shapes are preserved exactly -- digit counts, the auto-<project>-<id>-
+# WEBHOOK_DATA_TYPE_<TYPE> pattern, the Z-suffixed physical time against the
+# offset-free civil one -- because the parser is what these tests exercise.
+FAKE_PROJECT_NUMBER = "000000000000"
+FAKE_SUBSCRIBER_ID = "example-subscriber"
+FAKE_RECORD_ID = "100000000000000000"
+
+
+def _pointer(data_type="steps", operation="UPSERT", health_user_id="user-1"):
+    """One change pointer, shaped as Google really sends it.
+
+    The interval carries parallel representations of the same window: an
+    absolute UTC one and the wall-clock time the user would have seen.
+    """
+    return {
         "version": "1",
-        "clientProvidedSubscriptionName": "sub",
-        "healthUserId": "user-1",
-        "operation": "UPSERT",
-        "dataType": "steps",
-        "intervals": [],
+        "clientProvidedSubscriptionName": (
+            f"auto-{FAKE_PROJECT_NUMBER}-{FAKE_SUBSCRIBER_ID}"
+            f"-WEBHOOK_DATA_TYPE_{data_type.upper()}"
+        ),
+        "healthUserId": health_user_id,
+        "operation": operation,
+        "dataType": data_type,
+        "intervals": [
+            {
+                "physicalTimeInterval": {
+                    "startTime": "2026-01-02T09:00:00Z",
+                    "endTime": "2026-01-02T11:00:00Z",
+                },
+                "civilIso8601TimeInterval": {
+                    "startTime": "2026-01-02T10:00:00",
+                    "endTime": "2026-01-02T12:00:00",
+                },
+            }
+        ],
+        "recordId": FAKE_RECORD_ID,
     }
+
+
+#: A delivery in Google's real shape: a JSON *array* of envelopes, each
+#: wrapping a change pointer under "data". Getting this shape wrong is not
+#: hypothetical -- the
+#: first live notifications were refused with 403 because the fixture here
+#: was a bare object, so every test passed against a payload Google never
+#: sends. The values are never in the body; the server queries for those.
+NOTIFICATION = json.dumps([{"data": _pointer()}]).encode()
+
+#: Two pointers in one delivery, which Google batches.
+BATCHED_NOTIFICATION = json.dumps(
+    [{"data": _pointer("steps")}, {"data": _pointer("sleep")}]
 ).encode()
+
+#: The single bare object shown in the documentation, still accepted.
+BARE_NOTIFICATION = json.dumps(_pointer()).encode()
 
 #: The handshake body, sent twice during subscriber creation: once with
 #: credentials and once without.

@@ -11,3 +11,12 @@ class SubscriberError(WebhookError):
 
 class SignatureError(WebhookError):
     """A notification's signature did not verify against Google's keyset."""
+
+
+class NotificationError(WebhookError):
+    """A notification verified as Google's, but its body was not readable.
+
+    Distinct from SignatureError on purpose: this means our parser and
+    Google's payload disagree, which is a bug on our side rather than a
+    rejected caller.
+    """

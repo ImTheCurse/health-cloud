@@ -97,11 +97,14 @@ class SubscriberClient:
         data_types: tuple[str, ...] = DATA_TYPES,
         policy: str = AUTOMATIC,
     ) -> dict:
-        """Register the endpoint, then report whether verification passed.
+        """Register the endpoint, then read back what Google stored.
 
-        Google returns a long-running Operation, but exposes no endpoint to
-        poll it against, so success is confirmed by reading the subscriber's
-        state instead: ACTIVE means the handshake passed.
+        Google returns a long-running Operation but exposes no endpoint to poll
+        it against, and -- despite the discovery document describing a
+        ``state`` enum -- the subscriber resource comes back without one. The
+        proof that verification passed is this call returning at all: a failed
+        handshake fails it with FAILED_PRECONDITION rather than registering an
+        unverified subscriber.
         """
         self.validate(subscriber_id, endpoint_uri)
 
@@ -173,18 +176,27 @@ class SubscriberClient:
 
 
 def describe(subscriber: dict) -> str:
-    """One-line summary for the CLI."""
+    """Summary for the CLI.
+
+    Google does not return a ``state`` field on this resource in practice, so
+    a missing one is normal and must not be reported as a problem -- doing so
+    made a successful registration print as a failure. The marker flags only
+    what Google actually tells us is wrong: a state that is present and not
+    ACTIVE, or an endpoint with no secret registered against it.
+    """
     if not subscriber:
         return "no subscriber found"
-    state = subscriber.get("state", "UNKNOWN")
-    marker = "ok" if state == STATE_ACTIVE else "!!"
+    state = subscriber.get("state")
+    secret_set = subscriber.get("endpointAuthorization", {}).get("secretSet", False)
+    healthy = secret_set and state in (None, STATE_ACTIVE)
     types = sum(
         len(config.get("dataTypes", []))
         for config in subscriber.get("subscriberConfigs", [])
     )
     return (
-        f"[{marker}] {subscriber.get('name')}\n"
+        f"[{'ok' if healthy else '!!'}] {subscriber.get('name')}\n"
         f"     endpoint   {subscriber.get('endpointUri')}\n"
-        f"     state      {state}\n"
+        f"     state      {state or 'not reported by Google'}\n"
+        f"     secret     {'registered' if secret_set else 'MISSING'}\n"
         f"     dataTypes  {types}"
     )

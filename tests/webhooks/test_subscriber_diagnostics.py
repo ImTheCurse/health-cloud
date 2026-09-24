@@ -48,7 +48,24 @@ def test_permission_denied_names_the_missing_role():
         SubscriberClient(PROJECT, session).list()
 
 
+def test_describe_does_not_flag_a_subscriber_google_reports_no_state_for():
+    """Regression: a missing state is normal, not a failure.
+
+    Defaulting it to UNKNOWN and flagging [!!] made a registration that had
+    genuinely passed Google's handshake print as though it had failed.
+    """
+    rendered = describe(subscriber_payload())
+
+    assert "[ok]" in rendered
+    assert "not reported by Google" in rendered
+
+
 def test_describe_flags_an_unverified_subscriber():
-    """An UNVERIFIED subscriber delivers nothing, so it must stand out."""
+    """If Google ever does send a state, a bad one must stand out."""
     assert "[!!]" in describe(subscriber_payload("UNVERIFIED"))
     assert "[ok]" in describe(subscriber_payload("ACTIVE"))
+
+
+def test_describe_flags_an_endpoint_with_no_secret():
+    """Without a registered secret the receiver would 401 every delivery."""
+    assert "[!!]" in describe(subscriber_payload(secret_set=False))

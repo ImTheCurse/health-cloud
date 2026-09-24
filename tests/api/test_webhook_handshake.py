@@ -6,7 +6,7 @@ The unauthorized half of the handshake lives in the authorization tests.
 import json
 
 from server.webhooks.const import VERIFICATION_TYPE, WEBHOOK_PATH
-from tests.google_webhook import AUTH, NOTIFICATION, VERIFICATION
+from tests.google_webhook import AUTH, BARE_NOTIFICATION, VERIFICATION
 
 
 def test_an_authorized_verification_returns_200(signer_and_client):
@@ -41,7 +41,7 @@ def test_a_change_pointer_wearing_the_handshake_marker_is_refused(signer_and_cli
     """
     _, client = signer_and_client
     disguised = json.dumps(
-        {**json.loads(NOTIFICATION), "type": VERIFICATION_TYPE}
+        {**json.loads(BARE_NOTIFICATION), "type": VERIFICATION_TYPE}
     ).encode()
 
     response = client.post(

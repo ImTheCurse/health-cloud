@@ -37,16 +37,25 @@ class FakeSession:
         return self.responses.pop(0) if self.responses else FakeResponse()
 
 
-def subscriber_payload(state="ACTIVE"):
-    return {
+def subscriber_payload(state=None, secret_set=True):
+    """A subscriber shaped like the ones Google really returns.
+
+    Note there is no ``state`` key by default: the discovery document
+    describes the enum, but the live API does not send it. Pass one only to
+    exercise the branch that handles it being present.
+    """
+    payload = {
         "name": f"projects/{PROJECT}/subscribers/{VALID_ID}",
         "endpointUri": VALID_ENDPOINT,
-        "state": state,
         "subscriberConfigs": [{"dataTypes": list(DATA_TYPES)}],
+        "endpointAuthorization": {"secretSet": secret_set},
     }
+    if state is not None:
+        payload["state"] = state
+    return payload
 
 
-def created_subscriber(state="ACTIVE"):
+def created_subscriber(state=None):
     """The two responses a successful create makes: the operation, then a list.
 
     There is no `get` on this API, so the client confirms the result by

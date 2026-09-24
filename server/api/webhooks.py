@@ -11,17 +11,21 @@ FAILED_PRECONDITION, so the authorization check comes before anything else,
 including parsing the body.
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 
 from server.providers import get_endpoint_authorizer, get_signature_verifier
 from server.webhooks.const import WEBHOOK_PATH
-from server.webhooks.error import SignatureError
+from server.webhooks.error import NotificationError, SignatureError
 from server.webhooks.receiver import (
     EndpointAuthorizer,
     is_verification_request,
     parse_notification,
 )
 from server.webhooks.signature import SignatureVerifier
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["webhooks"])
 
@@ -58,9 +62,32 @@ def receive(
 
     try:
         verifier.verify(google_health_api_signature, body)
-        parse_notification(body)
     except SignatureError:
         return Response(status_code=status.HTTP_403_FORBIDDEN)
 
-    # TODO(step 3): persist to raw_notifications and enqueue for the fetcher.
+    try:
+        pointers = parse_notification(body)
+        logger.info(f"Parsed {len(pointers)} notification(s)")
+    except NotificationError as error:
+        # Google signed this, so an unreadable body means our parser is wrong,
+        # not that a caller misbehaved. Say so: refusing silently here hides a
+        # payload-shape mismatch behind what looked like a bad signature.
+        # Refusing rather than acking is deliberate -- Google retries for 7
+        # days, so the delivery survives long enough to fix the parser.
+        logger.warning("signed notification could not be parsed: %s", error)
+        return Response(status_code=status.HTTP_403_FORBIDDEN)
+
+    # TODO: persist to raw_notifications and enqueue for the fetcher.
+    # Until that lands these log lines are the only evidence a notification
+    # arrived, which is the whole point of registering the subscriber now.
+    # They record change pointers, never measurements: the values are not in
+    # the body, and fetching them is step 5.
+    for pointer in pointers:
+        logger.info(
+            "notification: %s %s over %d interval(s) for health user %s",
+            pointer.get("operation"),
+            pointer.get("dataType"),
+            len(pointer.get("intervals") or []),
+            pointer.get("healthUserId"),
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
