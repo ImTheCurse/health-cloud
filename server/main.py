@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from server.api import auth, health
+from server.api import auth, health, webhooks
 from server.config.settings import get_settings
 from server.db.session import create_all
 
@@ -29,3 +29,4 @@ app.add_middleware(
 )
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(webhooks.router)

@@ -15,6 +15,9 @@ from server.auth.google import GoogleOAuthClient
 from server.config.settings import get_settings
 from server.crypto.sessions import SessionTokenCodec
 from server.crypto.tokens import TokenCipher
+from server.webhooks.const import authorization_value
+from server.webhooks.receiver import EndpointAuthorizer
+from server.webhooks.signature import SignatureVerifier
 
 
 @lru_cache
@@ -44,3 +47,14 @@ def get_session_cookies() -> SessionCookies:
         secure=settings.cookie_secure,
         session_ttl=dt.timedelta(minutes=settings.session_ttl_minutes),
     )
+
+
+@lru_cache
+def get_endpoint_authorizer() -> EndpointAuthorizer:
+    return EndpointAuthorizer(authorization_value(get_settings().webhook_auth_secret))
+
+
+@lru_cache
+def get_signature_verifier() -> SignatureVerifier:
+    """Cached, so the keyset is fetched once per process rather than per call."""
+    return SignatureVerifier()

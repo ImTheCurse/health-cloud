@@ -47,15 +47,28 @@ class Settings(BaseSettings):
     # credentials are included.
     cors_origins: str
 
+    # --- Webhook subscriber ---
+    # Subscriber management is a project-level API authorised by a service
+    # account, not by the per-user OAuth tokens.
+    gcp_project_number: str
+    google_application_credentials: str
+    subscriber_id: str
+    #: Registered with Google and echoed back in the Authorization header of
+    #: every notification.
+    webhook_auth_secret: str
+    #: Public HTTPS origin Google delivers to.
+    webhook_public_url: str
+
     # --- Session cookie ---
     session_ttl_minutes: int
     cookie_secure: bool
     frontend_url: str
 
-
     @property
     def allowed_origins(self) -> list[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        return [
+            origin.strip() for origin in self.cors_origins.split(",") if origin.strip()
+        ]
 
 
 @lru_cache

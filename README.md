@@ -17,9 +17,15 @@ server/          FastAPI backend - import root, addressed as server.module.submo
   models/        SQLModel tables
   api/           routers
 client/          React dashboard (JavaScript, Vite)
-tests/           pytest
+tests/           pytest, mirroring server/ one package per module
 docs/            design context
 ```
+
+Tests live in the package matching the code they cover (`tests/crypto/`,
+`tests/webhooks/`), split into files by what they exercise rather than one file
+per module. Shared test doubles are plain modules, not conftests:
+`tests/google_webhook.py` (throwaway signing keys and sample bodies) and
+`tests/webhooks/fakes.py` (a fake transport for the subscriber API).
 
 The backend is **synchronous and SQLModel-only**: SQLModel ships no async
 engine, so async would mean importing SQLAlchemy directly. Driver is `psycopg`.
