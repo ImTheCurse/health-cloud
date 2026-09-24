@@ -27,6 +27,7 @@ AUTH = authorization_value(SECRET)
 #   clientProvidedSubscriptionName  held the real GCP project number and
 #                                   subscriber id, both readable by anyone
 #                                   with the repo
+#   healthUserId                    identified the real Google account
 #   recordId                        identified a real health record
 #   the interval times              were a real sleep window, and the gap
 #                                   between the physical and civil forms gave
@@ -35,12 +36,17 @@ AUTH = authorization_value(SECRET)
 # The shapes are preserved exactly -- digit counts, the auto-<project>-<id>-
 # WEBHOOK_DATA_TYPE_<TYPE> pattern, the Z-suffixed physical time against the
 # offset-free civil one -- because the parser is what these tests exercise.
+#: Sequential digits in Google's 19-digit shape, so it is recognisable as
+#: invented at a glance while still exercising the real format.
+FAKE_HEALTH_USER_ID = "1234567890123456789"
 FAKE_PROJECT_NUMBER = "000000000000"
 FAKE_SUBSCRIBER_ID = "example-subscriber"
 FAKE_RECORD_ID = "100000000000000000"
 
 
-def _pointer(data_type="steps", operation="UPSERT", health_user_id="user-1"):
+def _pointer(
+    data_type="steps", operation="UPSERT", health_user_id=FAKE_HEALTH_USER_ID
+):
     """One change pointer, shaped as Google really sends it.
 
     The interval carries parallel representations of the same window: an

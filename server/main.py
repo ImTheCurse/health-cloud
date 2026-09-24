@@ -9,11 +9,15 @@ from server.api import auth, health, webhooks
 from server.config.logging import configure_logging
 from server.config.settings import get_settings
 from server.db.session import create_all
+from server.observability.middleware import log_requests
+
+# Before the app exists, so anything logged during import or startup lands in
+# the configured sink rather than loguru's default one.
+configure_logging()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    configure_logging()
     create_all()
     yield
 
@@ -29,6 +33,11 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+# Registered last, so it is the outermost middleware: it sees the status CORS
+# or an error handler finally produced, and still emits a line when something
+# below it raises.
+app.middleware("http")(log_requests)
+
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(webhooks.router)

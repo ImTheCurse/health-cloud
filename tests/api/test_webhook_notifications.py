@@ -4,10 +4,14 @@ import inspect
 
 from server.api.webhooks import receive
 from server.webhooks.const import SIGNATURE_HEADER, WEBHOOK_PATH
+from tests.conftest import logged_text
 from tests.google_webhook import (
     AUTH,
     BATCHED_NOTIFICATION,
+    FAKE_HEALTH_USER_ID,
+    FAKE_RECORD_ID,
     NOTIFICATION,
+    SECRET,
     make_keypair,
     sign,
 )
@@ -59,7 +63,10 @@ def test_a_forged_notification_is_refused(signer_and_client):
 def test_a_body_altered_in_transit_is_refused(signer_and_client):
     signer, client = signer_and_client
     header = sign(signer, NOTIFICATION)
-    altered = NOTIFICATION.replace(b'"user-1"', b'"user-2"')
+    altered = NOTIFICATION.replace(
+        FAKE_HEALTH_USER_ID.encode(), b"9" * len(FAKE_HEALTH_USER_ID)
+    )
+    assert altered != NOTIFICATION, "the body was not actually altered"
 
     response = client.post(
         WEBHOOK_PATH,
@@ -85,87 +92,78 @@ def test_the_endpoint_is_sync_so_it_cannot_block_the_event_loop():
     assert not inspect.iscoroutinefunction(receive)
 
 
-def test_a_verified_notification_is_logged(signer_and_client, caplog):
-    """Until persistence lands the log is the only record of a delivery.
-
-    If this stops firing, an empty log during step 4 would be ambiguous: no
-    notification, or no logging?
-    """
+def test_a_batched_delivery_is_acknowledged(signer_and_client):
+    """Google batches several pointers into one delivery."""
     signer, client = signer_and_client
 
-    with caplog.at_level("INFO", logger="server.api.webhooks"):
-        client.post(
-            WEBHOOK_PATH,
-            content=NOTIFICATION,
-            headers={
-                "Authorization": AUTH,
-                SIGNATURE_HEADER: sign(signer, NOTIFICATION),
-            },
-        )
-
-    assert "UPSERT" in caplog.text
-    assert "steps" in caplog.text
-
-
-def test_a_refused_notification_is_not_logged_as_received(signer_and_client, caplog):
-    """A forged body must not appear in the log as though it arrived cleanly."""
-    _, client = signer_and_client
-    attacker, _ = make_keypair()
-
-    with caplog.at_level("INFO", logger="server.api.webhooks"):
-        client.post(
-            WEBHOOK_PATH,
-            content=NOTIFICATION,
-            headers={
-                "Authorization": AUTH,
-                SIGNATURE_HEADER: sign(attacker, NOTIFICATION),
-            },
-        )
-
-    assert "notification:" not in caplog.text
-
-
-def test_every_pointer_in_a_batched_delivery_is_logged(signer_and_client, caplog):
-    """Google batches several pointers into one delivery; none may be dropped."""
-    signer, client = signer_and_client
-
-    with caplog.at_level("INFO", logger="server.api.webhooks"):
-        response = client.post(
-            WEBHOOK_PATH,
-            content=BATCHED_NOTIFICATION,
-            headers={
-                "Authorization": AUTH,
-                SIGNATURE_HEADER: sign(signer, BATCHED_NOTIFICATION),
-            },
-        )
+    response = client.post(
+        WEBHOOK_PATH,
+        content=BATCHED_NOTIFICATION,
+        headers={
+            "Authorization": AUTH,
+            SIGNATURE_HEADER: sign(signer, BATCHED_NOTIFICATION),
+        },
+    )
 
     assert response.status_code == 204
-    assert caplog.text.count("notification:") == 2
-    assert "steps" in caplog.text and "sleep" in caplog.text
 
 
-def test_a_signed_body_we_cannot_parse_is_logged_loudly(signer_and_client, caplog):
-    """Regression: this exact case failed silently.
-
-    A valid signature over a body our parser rejects means the parser is
-    wrong. It returned a bare 403 with nothing in the log, which is
-    indistinguishable from a forged notification -- and that is precisely what
-    disguised the payload-shape mismatch when real traffic first arrived.
-    """
+def test_a_signed_body_we_cannot_parse_is_refused(signer_and_client):
+    """A valid signature over a body our parser rejects still must not 500."""
     signer, client = signer_and_client
     unreadable = b'{"unexpected": "shape", "data": "not an object"}'
 
-    with caplog.at_level("INFO", logger="server.api.webhooks"):
-        response = client.post(
-            WEBHOOK_PATH,
-            content=unreadable,
-            headers={
-                "Authorization": AUTH,
-                SIGNATURE_HEADER: sign(signer, unreadable),
-            },
-        )
+    response = client.post(
+        WEBHOOK_PATH,
+        content=unreadable,
+        headers={
+            "Authorization": AUTH,
+            SIGNATURE_HEADER: sign(signer, unreadable),
+        },
+    )
 
     assert response.status_code == 403
-    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
-    assert warnings, "a signed body we cannot parse must not fail silently"
-    assert "could not be parsed" in warnings[0].getMessage()
+
+
+def test_the_notification_body_never_reaches_a_log(signer_and_client, logs):
+    """The delivery is health data; only the shape of it may be logged.
+
+    The request line records what changed -- operation, data type, how many
+    intervals -- and the hashed user. The record id, the timestamps and the
+    raw body must not appear anywhere in it.
+    """
+    signer, client = signer_and_client
+
+    client.post(
+        WEBHOOK_PATH,
+        content=NOTIFICATION,
+        headers={
+            "Authorization": AUTH,
+            SIGNATURE_HEADER: sign(signer, NOTIFICATION),
+        },
+    )
+
+    assert logs, "nothing was logged, so this test would pass vacuously"
+    revealed = logged_text(logs)
+    assert FAKE_RECORD_ID not in revealed
+    assert "2026-01-02T09:00:00Z" not in revealed
+    assert FAKE_HEALTH_USER_ID not in revealed, "the health user id must be hashed"
+
+
+def test_the_shared_secret_never_reaches_a_log(signer_and_client, logs):
+    """It is replayed on every delivery; a log is the likeliest place to leak it."""
+    signer, client = signer_and_client
+
+    client.post(
+        WEBHOOK_PATH,
+        content=NOTIFICATION,
+        headers={
+            "Authorization": AUTH,
+            SIGNATURE_HEADER: sign(signer, NOTIFICATION),
+        },
+    )
+
+    assert logs, "nothing was logged, so this test would pass vacuously"
+    revealed = logged_text(logs)
+    assert SECRET not in revealed
+    assert AUTH not in revealed

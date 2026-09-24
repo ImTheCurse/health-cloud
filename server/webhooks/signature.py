@@ -6,12 +6,12 @@ this needs no secret-access token -- unlike a keyset holding private keys.
 """
 
 import base64
-import logging
 import time
 from functools import lru_cache
 
 import requests
 import tink
+from loguru import logger
 from tink import signature as tink_signature
 
 from server.webhooks.const import (
@@ -20,8 +20,6 @@ from server.webhooks.const import (
     KEYSET_URL,
 )
 from server.webhooks.error import SignatureError
-
-logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -76,7 +74,7 @@ class SignatureVerifier:
                 self._primitive = handle.primitive(tink_signature.PublicKeyVerify)
             except Exception as exc:
                 logger.warning(
-                    "could not load signing keyset from %s: %s", self._keyset_url, exc
+                    "could not load signing keyset from {}: {}", self._keyset_url, exc
                 )
                 raise SignatureError(
                     f"could not load Google's signing keyset: {exc}"
@@ -105,11 +103,11 @@ class SignatureVerifier:
             # Expected when keys have rotated, so not yet an error. Neither the
             # payload nor the signature is logged: the payload carries health
             # data, and the signature is noise without it.
-            logger.info("signature failed against cached keyset (%s); refreshing", exc)
+            logger.info("signature failed against cached keyset ({}); refreshing", exc)
 
         # Possibly a rotation we have not picked up yet. Refresh once, retry.
         try:
             self._load(force=True).verify(signature, payload)
         except tink.TinkError as exc:
-            logger.warning("signature rejected after keyset refresh: %s", exc)
+            logger.warning("signature rejected after keyset refresh: {}", exc)
             raise SignatureError("signature does not match Google's keyset") from exc

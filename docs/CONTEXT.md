@@ -14,21 +14,34 @@ server.
 
 ## The central mechanic
 
-**The webhook does not deliver health data.** It delivers a change pointer:
+**The webhook does not deliver health data.** It delivers change pointers, as
+a JSON **array of envelopes**, each wrapping one pointer under `data`:
 
 ```json
-{
-  "version": "1",
-  "clientProvidedSubscriptionName": "...",
-  "healthUserId": "...",
-  "operation": "UPSERT | DELETE",
-  "dataType": "steps",
-  "intervals": [ { "physicalTimeInterval": {...},
-                   "civilDateTimeInterval": {...},
-                   "civilIso8601TimeInterval": {...} } ],
-  "recordId": "..."
-}
+[
+  {
+    "data": {
+      "version": "1",
+      "clientProvidedSubscriptionName": "auto-<project>-<subscriber>-WEBHOOK_DATA_TYPE_SLEEP",
+      "healthUserId": "...",
+      "operation": "UPSERT | DELETE",
+      "dataType": "sleep",
+      "intervals": [ { "physicalTimeInterval": {...},
+                       "civilDateTimeInterval": {...},
+                       "civilIso8601TimeInterval": {...} } ],
+      "recordId": "..."
+    }
+  }
+]
 ```
+
+> **Verified against live traffic, 2026-09-24.** The array-of-envelopes shape is
+> not what the documentation's example suggests, and getting it wrong is not
+> cheap: a parser written against a bare object refused every real notification
+> with `403`, and because the refusal shared an exception type with signature
+> failure it looked like a crypto problem. One delivery can carry **several**
+> pointers, so a parser that reads only the first silently loses data. A bare
+> object is still accepted, since the docs show one.
 
 The notification says *that* steps changed for a user over an interval, never
 what the step count is. The server must then query the Health API with that
@@ -179,7 +192,7 @@ anything the webhook dropped.
 
 ## Data model
 
-Subscribe to **all 25 data types** with the `AUTOMATIC` subscription policy
+Subscribe to **all 29 data types** with the `AUTOMATIC` subscription policy
 (Google creates subscriptions on consent; no per-user bookkeeping). Capture
 wide, model narrow: display decisions come later, but data not subscribed to
 today may be unrecoverable, since subscriptions do not backfill.
@@ -245,6 +258,15 @@ were standing, not Tuesday in UTC. Full-day activities omit
   (rotated every 30 days — fetch and cache, never pin).
 - **Acknowledge with `204 No Content` immediately.** Anything else triggers
   retry with exponential backoff for up to 7 days.
+- **Match the handshake body exactly**, i.e. `body == {"type": "verification"}`.
+  Accepting any body that merely *contains* that key lets a caller holding the
+  shared secret attach the marker to a change pointer and skip signature
+  verification entirely — the secret alone must never be sufficient. Found by
+  security review, 2026-09-24.
+- **Keep "bad signature" and "unreadable body" as distinct failures.** Both
+  answer `403`, but a body Google signed that we cannot parse means *our*
+  parser is wrong, and it must say so loudly. Collapsing them into one silent
+  refusal is what hid the payload-shape bug above.
 
 ## Rate limits
 
@@ -253,6 +275,13 @@ Throttling returns `429`. Backfill must be paced accordingly.
 
 ## Operations
 
+- **The subscriber resource has no `state` field.** The discovery document
+  describes an `UNVERIFIED`/`ACTIVE`/`INACTIVE` enum; the live API does not
+  return one, and there is no `get` method either — only `list`. Treating a
+  missing state as a failure made a successful registration print as broken.
+  The real confirmation is that `create` returned at all: a failed handshake
+  fails the call with `FAILED_PRECONDITION` rather than registering something
+  unverified.
 - **Subscriber lifecycle via CLI** (`create` / `update` / `delete`), never at app
   startup. Startup reconciliation risks a restart silently repointing or failing
   the handshake on the production subscriber; the cutover should be a deliberate
@@ -264,6 +293,63 @@ Throttling returns `429`. Backfill must be paced accordingly.
   subscriber PATCH plus one handshake.
 - **Ops surfaces:** Dagster's own UI for fetch failures, push notifications for
   token expiry. No separate status page — it would be redundant.
+
+## Observability
+
+**loguru**, configured once in `server/config/logging.py`. Human-readable and
+colourised when `ENVIRONMENT=local`, structured JSON everywhere else — the same
+fields either way, so a line read in a terminal is the line an aggregator would
+parse. `diagnose=False` on the JSON sink is deliberate: loguru's diagnostic
+tracebacks inline local variable values, which on these paths would put
+notification bodies and decrypted tokens in the log.
+
+**One aggregated record per request**, not a line per thing that happened. The
+middleware (`@app.middleware("http")`, per FastAPI's documented form) builds a
+`RequestLog` and emits it once in a `finally`, so a request that raised still
+produces a line carrying `message` and `cause`:
+
+```
+request_id, method, path, status, duration_ms, is_secure,
+x_forwarded_for, user, events[], error{message, cause}
+```
+
+Anything in the request adds to it with `add_event(request, name, **fields)`.
+The record lives on **`request.state`** and every accessor takes the request
+explicitly — nothing ambient, and two requests in flight hold unrelated
+objects. A concurrency test asserts that directly, and was confirmed to fail
+when isolation is deliberately broken.
+
+`request_id` is generated per request and echoed as `X-Request-ID`. An inbound
+one is **ignored**: this endpoint is internet-facing, and trusting a caller's
+id would let them forge or collide correlation.
+
+`user` is a six-hex-character SHA-256 truncation of `healthUserId`, computed on
+demand and **not stored** — it is a pure function, so it can always be
+recomputed to identify which user a line refers to. A raw health user id,
+combined with a data type and a timestamp, *is* a health record.
+
+**Never logged, unconditionally:** request and response bodies, `Authorization`,
+cookies, and the signature header.
+
+**Log level is a per-route policy, not sampling.** Nothing is discarded and
+nothing is decided by chance; the policy only chooses a level, and a `DEBUG`
+record is still there for anyone who lowers the threshold. The default is
+`ALWAYS`, so a new route is logged in full from the day it is written and going
+quiet is a visible decision in the source:
+
+```python
+@router.get("/healthz")
+@log_policy(QUIET)
+def healthz() -> dict[str, str]: ...
+```
+
+A `QUIET` route drops routine successes to `DEBUG` but still speaks up on
+`status >= 400`, an exception, or any domain event. Only `/healthz` and
+`/readyz` are quiet today. Locally everything is `INFO` regardless.
+
+uvicorn's own loggers are left alone, so each request currently produces **two**
+lines — uvicorn's access line and ours. Collapsing them is a small
+`InterceptHandler` change if the duplication becomes annoying.
 
 ## Testing
 
@@ -277,6 +363,26 @@ Plus replayed notification fixtures and idempotent-upsert tests. These land
 **before** a real subscriber is registered — a handshake bug is miserable to
 debug live.
 
+**Test behaviour, not logging.** Assert the exception a function raises and the
+status a route returns; do not assert that a function logged. The exception is
+what the rest of the system reacts to, and a test that pins log wording breaks
+on every rewording while protecting nothing. The deliberate exception is a
+small set asserting that sensitive values — notification bodies, the shared
+secret, the signature, the raw health user id — **never reach a log**, which is
+a security property rather than a message format.
+
+**Fixtures must match what Google really sends.** The payload-shape bug above
+survived a green suite because the fixture was the shape we imagined. Test
+doubles are built from captured live traffic, with every real identifier
+replaced by an invented one of the same form (`FAKE_HEALTH_USER_ID`,
+`FAKE_PROJECT_NUMBER`, `FAKE_RECORD_ID` in `tests/google_webhook.py`) so no
+account, record or sleep time reaches the repository.
+
+**A test that cannot fail is not a test.** Leakage assertions first check that
+something *was* logged, or they pass vacuously; a tamper-detection test checks
+that the body it altered actually differs. Both guards were added after the
+real versions silently stopped testing anything.
+
 ## Build order
 
 Progress marker — tick a box only when the step is genuinely complete.
@@ -288,8 +394,18 @@ Progress marker — tick a box only when the step is genuinely complete.
       JWT cookie session, one-click re-consent
 - [ ] **3. Webhook receiver** — signature verification, 200/401 handshake, 204
       ack, enqueue to pgqueuer, **with pytest coverage**
-- [ ] **4. Subscriber CLI + ngrok static domain** — register a real subscriber,
+      — *done except persistence:* verification, handshake, parsing, the 204 ack
+      and the tests are built and proven against live traffic. `raw_notifications`
+      and the pgqueuer enqueue are **not**; `server/api/webhooks.py` still carries
+      the `TODO`, and pgqueuer is not yet a dependency. Notifications are logged
+      as events and nothing else, so they do not survive a restart.
+- [x] **4. Subscriber CLI + ngrok static domain** — register a real subscriber,
       confirm live notifications land
+      — *done 2026-09-24.* The subscriber named in `SUBSCRIBER_ID` was
+      registered on the project in `GCP_PROJECT_NUMBER` against an ngrok static
+      domain; Google's handshake was observed passing from its own IPs (401 then
+      200), and real `sleep` / `distance` notifications acknowledged with 204.
+      Identifiers live in `.env`, never here.
 - [ ] **5. Fetcher worker** — token refresh, `list` on notified interval,
       idempotent upsert, **plus one-off backfill CLI**
 - [ ] **6. React dashboard** — steps, sleep, heart rate
@@ -299,6 +415,14 @@ Progress marker — tick a box only when the step is genuinely complete.
 
 Step 3 precedes step 4 deliberately: verification logic is tested against
 fixtures before Google is ever pointed at the endpoint.
+
+**That ordering was deviated from**, by choice, on 2026-09-24: step 4 was done
+against a log-only receiver so that real deliveries could be seen before
+persistence was built. It was the right call for an unrelated reason — real
+traffic immediately exposed the payload-shape error that fixtures had not — but
+it means step 3 is still open, and every notification arriving now exists only
+in a log. Google retries for 7 days, so the window to land persistence without
+losing anything is exactly that long.
 
 The dashboard precedes Dagster by choice; the backfill CLI in step 5 exists so
 the dashboard has real data to draw before the recurring job is built.
@@ -314,6 +438,8 @@ user, rather than assuming.
 | Push alert service | Step 7 | ntfy vs Gotify — likely whichever is already running on the self-hosted box |
 | How `client/` is served in production | Step 6 / 8 | Tooling settled at step 1: **Vite + React (JavaScript)**. Still open: static build served from the same host as the API, sharing a registrable domain for cookie auth |
 | ~~Role of `google-credentials.json`~~ | ~~Step 2~~ | **Settled: none.** Client ID/secret live in `.env`; the file is kept but unused |
+| ~~Logging~~ | ~~Step 3~~ | **Settled: loguru**, one aggregated record per request on `request.state`, per-route level policy defaulting to full. See *Observability* |
+| ~~Storing a log-safe user handle~~ | ~~Step 3~~ | **Settled: not stored.** A truncated SHA-256 of `healthUserId` is a pure function, so it is recomputed on demand — no column, no migration |
 
 ## Deferred
 

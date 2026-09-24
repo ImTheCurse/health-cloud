@@ -11,10 +11,10 @@ FAILED_PRECONDITION, so the authorization check comes before anything else,
 including parsing the body.
 """
 
-import logging
-
 from fastapi import APIRouter, Depends, Header, Request, Response, status
+from loguru import logger
 
+from server.observability.context import add_event, set_user
 from server.providers import get_endpoint_authorizer, get_signature_verifier
 from server.webhooks.const import WEBHOOK_PATH
 from server.webhooks.error import NotificationError, SignatureError
@@ -24,8 +24,6 @@ from server.webhooks.receiver import (
     parse_notification,
 )
 from server.webhooks.signature import SignatureVerifier
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["webhooks"])
 
@@ -47,6 +45,7 @@ Verifier = Depends(get_signature_verifier)
 
 @router.post(WEBHOOK_PATH)
 def receive(
+    request: Request,
     body: bytes = Body,
     authorizer: EndpointAuthorizer = Authorizer,
     verifier: SignatureVerifier = Verifier,
@@ -62,32 +61,35 @@ def receive(
 
     try:
         verifier.verify(google_health_api_signature, body)
-    except SignatureError:
+    except SignatureError as error:
+        add_event(request, "signature_rejected", reason=str(error))
         return Response(status_code=status.HTTP_403_FORBIDDEN)
 
     try:
         pointers = parse_notification(body)
-        logger.info(f"Parsed {len(pointers)} notification(s)")
     except NotificationError as error:
+        add_event(request, "notification_unparseable", reason=str(error))
         # Google signed this, so an unreadable body means our parser is wrong,
         # not that a caller misbehaved. Say so: refusing silently here hides a
         # payload-shape mismatch behind what looked like a bad signature.
         # Refusing rather than acking is deliberate -- Google retries for 7
         # days, so the delivery survives long enough to fix the parser.
-        logger.warning("signed notification could not be parsed: %s", error)
+        logger.warning("signed notification could not be parsed: {}", error)
         return Response(status_code=status.HTTP_403_FORBIDDEN)
 
     # TODO: persist to raw_notifications and enqueue for the fetcher.
-    # Until that lands these log lines are the only evidence a notification
+    # Until that lands these events are the only evidence a notification
     # arrived, which is the whole point of registering the subscriber now.
     # They record change pointers, never measurements: the values are not in
     # the body, and fetching them is step 5.
     for pointer in pointers:
-        logger.info(
-            "notification: %s %s over %d interval(s) for health user %s",
-            pointer.get("operation"),
-            pointer.get("dataType"),
-            len(pointer.get("intervals") or []),
-            pointer.get("healthUserId"),
+        if health_user_id := pointer.get("healthUserId"):
+            set_user(request, health_user_id)
+        add_event(
+            request,
+            "notification",
+            operation=pointer.get("operation"),
+            data_type=pointer.get("dataType"),
+            intervals=len(pointer.get("intervals") or []),
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -1,19 +1,26 @@
-"""What signature handling writes to the log, and what it must never write.
+"""What signature handling must never reveal.
 
-A first-attempt failure is routine during a key rotation; a failure after the
-refresh is not. The levels have to tell those apart, and neither may carry the
-notification body, which holds health data.
+Deliberately not a test that the verifier logs correctly -- its behaviour is
+covered by the exceptions it raises in test_signature_verification.py and
+test_signature_keyset.py. What is worth pinning down is the one thing those
+tests cannot see: that a notification body, which carries health data, never
+reaches a log line by any route.
 """
 
 import pytest
 
 from server.webhooks.error import SignatureError
 from server.webhooks.signature import SignatureVerifier
-from tests.google_webhook import NOTIFICATION, Keyset, make_keypair, sign
+from tests.conftest import logged_text
+from tests.google_webhook import FAKE_HEALTH_USER_ID, Keyset, make_keypair, sign
 
 
 def test_registration_runs_once_per_process():
-    """The lru_cache is the singleton; calling it repeatedly is a no-op."""
+    """The lru_cache is the singleton; calling it repeatedly is a no-op.
+
+    Not about logging: it is here because it guards the cache, and Tink's
+    registry is process-global.
+    """
     from server.webhooks.signature import signature_primitives_registered
 
     signature_primitives_registered()
@@ -24,57 +31,34 @@ def test_registration_runs_once_per_process():
     assert signature_primitives_registered.cache_info().currsize == 1
 
 
-def test_a_rotation_is_logged_as_information_not_an_error(caplog):
-    old_signer, old_public = make_keypair()
-    keyset = Keyset(old_public)
-    verifier = SignatureVerifier(fetch=keyset)
-    verifier.verify(sign(old_signer, NOTIFICATION), NOTIFICATION)
-
-    new_signer, new_public = make_keypair()
-    keyset.contents = new_public
-
-    with caplog.at_level("INFO", logger="server.webhooks.signature"):
-        verifier.verify(sign(new_signer, NOTIFICATION), NOTIFICATION)
-
-    assert "refreshing" in caplog.text
-    assert not [r for r in caplog.records if r.levelname in {"WARNING", "ERROR"}]
-
-
-def test_a_rejected_signature_is_logged_as_a_warning(caplog):
-    attacker_signer, _ = make_keypair()
-    _, google_public = make_keypair()
-    verifier = SignatureVerifier(fetch=Keyset(google_public))
-
-    with caplog.at_level("INFO", logger="server.webhooks.signature"):
-        with pytest.raises(SignatureError):
-            verifier.verify(sign(attacker_signer, NOTIFICATION), NOTIFICATION)
-
-    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
-    assert warnings, "a rejected signature should be visible in the log"
-    assert "after keyset refresh" in warnings[0].getMessage()
-
-
-def test_the_payload_is_never_logged(caplog):
+def test_the_payload_is_never_logged(logs):
     """Notification bodies carry health data; they must not reach the log."""
     attacker_signer, _ = make_keypair()
     _, google_public = make_keypair()
     verifier = SignatureVerifier(fetch=Keyset(google_public))
-    secret_payload = b'{"healthUserId":"user-1","dataType":"sleep"}'
+    secret_payload = (
+        b'{"healthUserId":"' + FAKE_HEALTH_USER_ID.encode() + b'","dataType":"sleep"}'
+    )
 
-    with caplog.at_level("DEBUG", logger="server.webhooks.signature"):
-        with pytest.raises(SignatureError):
-            verifier.verify(sign(attacker_signer, secret_payload), secret_payload)
+    with pytest.raises(SignatureError):
+        verifier.verify(sign(attacker_signer, secret_payload), secret_payload)
 
-    assert "user-1" not in caplog.text
-    assert "sleep" not in caplog.text
+    assert logs, "nothing was logged, so this test would pass vacuously"
+    revealed = logged_text(logs)
+    assert FAKE_HEALTH_USER_ID not in revealed
+    assert "sleep" not in revealed
 
 
-def test_an_unreachable_keyset_is_logged(caplog):
-    def explode(url):
-        raise ConnectionError("dns failure")
+def test_the_signature_itself_is_never_logged(logs):
+    """The signature is the caller's credential for that body."""
+    attacker_signer, _ = make_keypair()
+    _, google_public = make_keypair()
+    verifier = SignatureVerifier(fetch=Keyset(google_public))
+    payload = b'{"dataType":"steps"}'
+    header = sign(attacker_signer, payload)
 
-    with caplog.at_level("WARNING", logger="server.webhooks.signature"):
-        with pytest.raises(SignatureError):
-            SignatureVerifier(fetch=explode).verify("AAAA", NOTIFICATION)
+    with pytest.raises(SignatureError):
+        verifier.verify(header, payload)
 
-    assert "could not load signing keyset" in caplog.text
+    assert logs, "nothing was logged, so this test would pass vacuously"
+    assert header not in logged_text(logs)

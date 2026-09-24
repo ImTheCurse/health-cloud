@@ -11,7 +11,12 @@ import pytest
 
 from server.webhooks.error import NotificationError
 from server.webhooks.receiver import parse_notification
-from tests.google_webhook import BARE_NOTIFICATION, BATCHED_NOTIFICATION, NOTIFICATION
+from tests.google_webhook import (
+    BARE_NOTIFICATION,
+    BATCHED_NOTIFICATION,
+    FAKE_HEALTH_USER_ID,
+    NOTIFICATION,
+)
 
 
 def test_a_real_delivery_yields_its_change_pointer():
@@ -21,7 +26,7 @@ def test_a_real_delivery_yields_its_change_pointer():
     assert len(pointers) == 1
     assert pointers[0]["dataType"] == "steps"
     assert pointers[0]["operation"] == "UPSERT"
-    assert pointers[0]["healthUserId"] == "user-1"
+    assert pointers[0]["healthUserId"] == FAKE_HEALTH_USER_ID
 
 
 def test_the_envelope_is_unwrapped():
