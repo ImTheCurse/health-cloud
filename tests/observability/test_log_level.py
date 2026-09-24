@@ -26,13 +26,29 @@ class FakeSettings:
     environment: str
 
 
+def _running_in(monkeypatch, environment: str) -> TestClient:
+    """A client whose server believes it is in ``environment``.
+
+    Stated rather than inherited: reading the real settings would make the
+    result depend on whatever ENVIRONMENT happens to be in the developer's
+    gitignored .env, so the same test would pass here and fail in CI.
+    """
+    monkeypatch.setattr(
+        middleware, "get_settings", lambda: FakeSettings(environment=environment)
+    )
+    return TestClient(build_app(), raise_server_exceptions=False)
+
+
+@pytest.fixture
+def local(monkeypatch):
+    """The developer's laptop."""
+    return _running_in(monkeypatch, "local")
+
+
 @pytest.fixture
 def deployed(monkeypatch):
     """Pretend we are not on the developer's laptop."""
-    monkeypatch.setattr(
-        middleware, "get_settings", lambda: FakeSettings(environment="production")
-    )
-    return TestClient(build_app(), raise_server_exceptions=False)
+    return _running_in(monkeypatch, "production")
 
 
 def level_of(logs):
@@ -40,9 +56,8 @@ def level_of(logs):
     return logs[0].record["level"].name
 
 
-def test_locally_even_a_quiet_route_is_logged(logs):
-    """ENVIRONMENT=local in .env, so this is the default fixture's world."""
-    TestClient(build_app()).get("/quiet")
+def test_locally_even_a_quiet_route_is_logged(local, logs):
+    local.get("/quiet")
 
     assert level_of(logs) == "INFO"
 

@@ -1,0 +1,77 @@
+# Runs on every push, so every commit you push on its own gets a verdict you
+# can trust when reverting. Deliberately no `concurrency` group: cancelling a
+# superseded run would leave the commit beneath it with no result at all.
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-api:
+    runs-on: ubuntu-latest
+    # Settings declares every field required, and importing the app builds it,
+    # so the suite cannot even be collected without a full environment. These
+    # are invented values, not secrets: nothing here reaches Google, Postgres
+    # or the network. Keeping them in the workflow rather than in repository
+    # secrets means a fork's push is checked too, and that a newly required
+    # field fails loudly here instead of being silently defaulted away.
+    env:
+      ENVIRONMENT: ci
+      LOG_LEVEL: INFO
+      # Parsed, never connected to.
+      DATABASE_URL: postgresql+psycopg://ci:ci@localhost:5432/ci
+      SQL_ECHO: "false"
+      GOOGLE_CLIENT_ID: ci-client-id
+      GOOGLE_CLIENT_SECRET: ci-client-secret
+      GOOGLE_REDIRECT_URI: http://localhost:8000/auth/google/callback
+      # Real 32-byte hex, because these are decoded into keys on use. The
+      # repeated digits make it obvious they were never random.
+      TOKEN_ENCRYPTION_KEY: "1111111111111111111111111111111111111111111111111111111111111111"
+      SESSION_SECRET: "2222222222222222222222222222222222222222222222222222222222222222"
+      CORS_ORIGINS: http://localhost:5173
+      GCP_PROJECT_NUMBER: "000000000000"
+      GOOGLE_APPLICATION_CREDENTIALS: service-account.json
+      SUBSCRIBER_ID: ci-subscriber
+      WEBHOOK_AUTH_SECRET: ci-webhook-secret
+      # .invalid is reserved by RFC 2606 and can never resolve.
+      WEBHOOK_PUBLIC_URL: https://ci.example.invalid
+      SESSION_TTL_MINUTES: "60"
+      COOKIE_SECURE: "false"
+      FRONTEND_URL: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      # --locked, not --frozen: a uv.lock that no longer agrees with
+      # pyproject.toml fails the build rather than testing a dependency set
+      # nobody committed.
+      - run: uv sync --locked
+
+      - run: uv run pytest
+
+  frontend-client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      # npm ci refuses to run if package-lock.json and package.json disagree.
+      - run: npm ci
+
+      # There are no client tests, so the build is the only thing that catches
+      # a broken import or malformed JSX before it reaches the browser.
+      - run: npm run build
