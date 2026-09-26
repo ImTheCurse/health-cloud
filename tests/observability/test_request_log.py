@@ -10,9 +10,10 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from server.observability.const import QUIET
-from server.observability.context import add_event, log_id, set_user
+from server.observability.context import add_event, set_user_to_request
 from server.observability.middleware import log_requests
 from server.observability.policy import log_policy
+from server.observability.util import hashed_log_id
 from tests.google_webhook import FAKE_HEALTH_USER_ID
 
 
@@ -26,7 +27,7 @@ def build_app() -> FastAPI:
 
     @app.get("/eventful")
     def eventful(request: Request) -> dict:
-        set_user(request, FAKE_HEALTH_USER_ID)
+        set_user_to_request(request, FAKE_HEALTH_USER_ID)
         add_event(request, "notification", data_type="sleep")
         return {"ok": True}
 
@@ -88,7 +89,7 @@ def test_the_user_is_hashed_never_raw(app_client, logs):
     app_client.get("/eventful")
     extra = only_record(logs)
 
-    assert extra["user"] == log_id(FAKE_HEALTH_USER_ID)
+    assert extra["user"] == hashed_log_id(FAKE_HEALTH_USER_ID)
     assert FAKE_HEALTH_USER_ID not in str(extra)
 
 

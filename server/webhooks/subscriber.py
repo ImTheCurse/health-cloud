@@ -16,9 +16,9 @@ from server.webhooks.const import (
     HTTP_TIMEOUT_SECONDS,
     STATE_ACTIVE,
     SUBSCRIBER_ID_PATTERN,
-    authorization_value,
 )
 from server.webhooks.error import SubscriberError
+from server.webhooks.util import authorization_value
 
 
 class SubscriberClient:

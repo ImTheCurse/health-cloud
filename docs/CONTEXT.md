@@ -52,10 +52,10 @@ than an architectural preference.
 Flow:
 
 ```
-Google Health  --webhook-->  receiver  -->  pgqueuer  -->  fetcher worker
-                             (verify sig,                  (refresh token,
-                              204, enqueue)                 list dataPoints,
-                                                            upsert)
+Google Health  --webhook-->  receiver  -->  NATS       -->  Prefect flow
+                             (verify sig,      JetStream    (pull, refresh token,
+                              audit row,       (file)        list dataPoints,
+                              publish, 204)                  upsert, then ack)
                                                                  |
                                                                  v
                                                              Postgres
@@ -65,8 +65,8 @@ Google Health  --webhook-->  receiver  -->  pgqueuer  -->  fetcher worker
                                                         React dashboard
 ```
 
-The receiver is deliberately dumb and fast: verify, acknowledge, enqueue,
-nothing else. All fragile work (token refresh, pagination, rate limits) lives in
+The receiver is deliberately dumb and fast: verify, record, publish,
+acknowledge, nothing else. All fragile work (token refresh, pagination, rate limits) lives in
 workers, where retries are free.
 
 ## Stack
@@ -83,8 +83,9 @@ workers, where retries are free.
 | Outbound HTTP | `requests` |
 | OAuth flow | `google-auth-oauthlib` |
 | Crypto | `cryptography` AES-256-GCM for tokens at rest; PyJWT HS256 for session cookies; Tink **only** for Google's webhook signature keyset (step 3) |
-| Queue | pgqueuer (Postgres-backed) |
-| Orchestration | Dagster |
+| Message queue | NATS JetStream, file storage, consumed by Prefect |
+| Orchestration | Prefect 3, self-hosted |
+| Flow code | `server/flows/`, `prefect` in its own dependency group |
 | Frontend | React |
 | Layout | Monorepo: `server/` + `client/`, separate deploy artifacts |
 | Config | `.env` |
@@ -92,14 +93,22 @@ workers, where retries are free.
 
 ### Why these
 
-- **pgqueuer over RabbitMQ.** Postgres is already running, so enqueue is
-  transactional with the raw-notification insert — which removes an entire class
-  of lost-or-duplicated-across-two-systems bugs. RabbitMQ would be a second
-  stateful service to operate for one person's step counts.
-- **Dagster over Prefect/Temporal.** Temporal is durable execution, not a DAG
-  engine, and self-hosting means running its own server and datastore. Dagster's
-  partitioned assets and one-command local UI (`dagster dev`) fit the recurring
-  catch-up job directly.
+- **NATS JetStream over a Postgres-backed queue.** Settled 2026-09-25. Keeping
+  the queue in Postgres was worth a second stateful service only while it bought
+  a transactional enqueue alongside the raw-notification insert — and that
+  property is **not achievable** with a Postgres queue library here, because the
+  psycopg drivers require `autocommit` and so can never share our transaction.
+  With atomicity off the table, a real broker earns its keep: durable replay,
+  subjects for the fan-out the ML work will want, and a publish acknowledgement
+  the receiver can trust. The price is a second stateful service, accepted
+  deliberately. Durability then rests on ordering — see *Orchestration*.
+- **Prefect over Dagster.** Changed 2026-09-25, before any Dagster code existed,
+  so the switch cost nothing. The work is a handful of dependent steps over a
+  7-day window — fetch, upsert, reconcile — not a partitioned asset graph, and
+  the flow/task model states that directly. The deciding factor is the ML work in
+  *Deferred*: multi-step pipelines with retries and visibility are what Prefect
+  is for, and a message queue has no notion of a flow at all. See *Orchestration* for
+  what Prefect does and does not guarantee.
 - **No Alembic.** SQLModel is not a migration tool — it creates tables that do
   not exist and cannot alter ones that do. That is acceptable here *only*
   because the backfill window is 7 days: a schema change means wiping the
@@ -186,7 +195,7 @@ Three independent 7-day windows line up:
 - Testing-mode refresh tokens live 7 days
 - The chosen backfill window is 7 days
 
-So a single recurring Dagster job — *"reconcile the last 7 days for every data
+So a single recurring Prefect flow — *"reconcile the last 7 days for every data
 type"* — covers first-connect backfill, post-re-consent gap recovery, and
 anything the webhook dropped.
 
@@ -222,7 +231,9 @@ reprocessing be a no-op.
 
 Explicitly *not* at the notification level: a duplicate notification and a
 genuine correction to the same interval are indistinguishable by payload hash,
-so hashing would silently drop real edits.
+so hashing would silently drop real edits. This is why JetStream's `Nats-Msg-Id`
+deduplication is left switched off: a broker that offers the trap for free is
+still offering the trap.
 
 ### Deletions
 
@@ -242,8 +253,117 @@ were standing, not Tuesday in UTC. Full-day activities omit
 - **Hot path (webhook `UPSERT`):** `GET /v4/users/me/dataTypes/{type}/dataPoints`
   filtered to the notified interval. The notification already says exactly what
   changed, so this is the cheapest correct call.
-- **Daily Dagster job:** `:reconcile` over the trailing 7 days, as the safety
+- **Daily Prefect flow:** `:reconcile` over the trailing 7 days, as the safety
   net that catches what the webhook path missed or deleted.
+
+## Orchestration
+
+Prefect 3, self-hosted. Settled 2026-09-25.
+
+**What Prefect guarantees, and what it does not.** Prefect is *not* replay-based
+durable execution. What it offers is transactions with at-most-once semantics via
+a computed cache key, task result caching, and retries. Two defaults matter:
+result persistence is **off** by default and lands in `~/.prefect/storage/`, and
+the default cache key includes the **flow run id**, so cached results are reused
+across retries of one run, not across a fresh run. Cross-run resumption needs a
+deliberate `cache_key_fn` or transaction key.
+
+That is accepted rather than worked around, because the unit of work — *fetch one
+data type over one interval and upsert on the natural key* — is already
+idempotent. Re-executing it costs an HTTP call, not correctness, so replay buys
+little. A transaction key per `(health_user_id, data_type, interval)` makes a
+rerun cheap; that is as far as it needs to go. If genuine resume-from-last-step
+is ever needed, that is the point to revisit Temporal.
+
+**The path a notification takes.** The receiver records the delivery, publishes
+one message per change pointer to NATS JetStream, and only then answers 204. A
+Prefect flow pulls those messages, does the work, and acknowledges each one.
+
+The receiver half is built (step 3). The flow, and the optional trigger that
+starts one promptly rather than waiting for its schedule, arrive with step 5 —
+until then messages accumulate in the stream, which is exactly what a durable
+work queue is for.
+
+**NATS JetStream, not core NATS.** Core NATS is at-most-once and never replays:
+a message published while no subscriber is connected is simply gone. Durability
+means JetStream — a stream with **file** storage on a named volume, plus per
+message acknowledgements. Memory-backed streams were rejected: a
+`docker compose restart` would silently discard every un-fetched notification.
+The stream sets `allow_direct` **only when `ENVIRONMENT` is `local`**: without
+it a work-queue stream refuses to be paged at all, so browsing the queue while
+developing needs it, but it also permits reading every queued message — each one
+naming a user and what they did — so it stays off everywhere else.
+
+**Ordering carries what atomicity cannot.** No external broker can join a
+Postgres transaction, so the sequence is fixed and the ordering does the work:
+
+1. insert the `raw_notifications` row and **commit**
+2. publish one message per pointer, and **wait for the JetStream `PubAck`**
+3. only then answer **204**
+
+Any failure answers **503** instead, and Google's 7-day redelivery is the retry.
+Nothing is lost. The residue of a failure is a *duplicate* audit row on
+redelivery, which is harmless: the log is append-only and dedupe lives at the
+data level. The audit row commits first deliberately — the reverse order could
+leave work running with no record of what asked for it. Message payloads are
+self-contained, so a flow never reads the audit table to do its work.
+
+The `PubAck` matters: it is positive confirmation from the server that the
+message is persisted, so the 204 is never sent on the strength of a fire and
+forget publish.
+
+**The client is asyncio-only.** `nats-py` has no synchronous client — `connect`
+and `publish` are both coroutines, and nothing in the package offers a blocking
+form. Since the receiver is deliberately synchronous, the connection lives on a
+dedicated event-loop thread opened at startup, and the route publishes with
+`asyncio.run_coroutine_threadsafe(...).result(timeout=...)`. One warm connection,
+no per-request handshake, and no event loop inside a sync route.
+
+**The flow is a pull consumer.** There is no `prefect-nats` integration; it does
+not exist on PyPI. The flow fetches a batch from a durable JetStream consumer and
+acknowledges each message **only after its upsert has committed**, which is what
+makes at-least-once mean something. A bridge process that subscribed and called
+`run_deployment` per message was rejected: it acknowledges before the work is
+durable, so a failed flow loses the message, and it adds a third process with a
+second state machine.
+
+**JetStream's own deduplication is deliberately unused.** A `Nats-Msg-Id` within
+the stream's duplicate window would collapse repeat deliveries, which is the same
+trap as a queue-level dedupe key: a duplicate delivery and a genuine correction
+to the same interval are indistinguishable. Dedupe stays at the data level — see
+*Idempotency*.
+
+**The stream is created by the app, not by a setup command.** Creating a
+JetStream stream is an idempotent API call rather than a schema migration, so
+`publisher.start()` does it on every boot and a fresh broker needs no manual
+step. The NATS CLI is useful for looking at the queue but is **not** required to
+run the app or the tests -- see the README.
+
+**Deployment shape.** Prefect's server, its background `prefect server services`
+process, its worker and its **own** Postgres container all run under
+`docker-compose.yml`, deliberately separate from the app's Postgres: Prefect runs
+Alembic migrations over its schema, and this project's stack table says
+*Migrations: None*. Letting another tool's migrations into the app's database
+would end the ability to reason about it. The FastAPI app itself is still run by
+hand; containerising it belongs to step 8.
+
+**Flow code lives in `server/flows/`.** The flows need `server.models`,
+`server.db` and `server.crypto`, so they share the package. The import direction
+is one-way — flows may import `server`, never the reverse. `prefect` is declared
+in its own dependency group, not as an API dependency, because it pulls roughly
+50 extra packages (including `alembic`, `asyncpg` and `docker`) that the web
+process never imports.
+
+**A database error's message is not safe to log.** A SQLAlchemy
+`StatementError` stringifies with its statement *and bound parameters*
+attached, and for the receiver those parameters are the delivery's health data.
+Failure paths therefore log `type(error).__name__`, never `str(error)`. Found by
+checking rather than by leaking, 2026-09-25, and covered by a test.
+
+**Not available self-hosted:** Prefect's HTTP *webhooks*, which turn an external
+request into a Prefect event, are a Cloud feature. Events and automations are in
+the open-source server; the webhook receiver is not. Nothing in this design needs
+it — Google talks to our own endpoint — but it is worth not rediscovering.
 
 ## Webhook endpoint requirements
 
@@ -291,7 +411,7 @@ Throttling returns `429`. Backfill must be paced accordingly.
   re-verification each session.
 - **Production:** cloudflared on the self-hosted server. Cutover is one
   subscriber PATCH plus one handshake.
-- **Ops surfaces:** Dagster's own UI for fetch failures, push notifications for
+- **Ops surfaces:** Prefect's own UI for fetch failures, push notifications for
   token expiry. No separate status page — it would be redundant.
 
 ## Observability
@@ -392,13 +512,15 @@ Progress marker — tick a box only when the step is genuinely complete.
       Postgres, `.env` scaffold, add `.env` to `.gitignore`
 - [x] **2. Google OAuth end to end** — consent flow, encrypted token storage,
       JWT cookie session, one-click re-consent
-- [ ] **3. Webhook receiver** — signature verification, 200/401 handshake, 204
-      ack, enqueue to pgqueuer, **with pytest coverage**
-      — *done except persistence:* verification, handshake, parsing, the 204 ack
-      and the tests are built and proven against live traffic. `raw_notifications`
-      and the pgqueuer enqueue are **not**; `server/api/webhooks.py` still carries
-      the `TODO`, and pgqueuer is not yet a dependency. Notifications are logged
-      as events and nothing else, so they do not survive a restart.
+- [x] **3. Webhook receiver** — signature verification, 200/401 handshake,
+      audit row, publish to NATS JetStream, 204 ack, **with pytest coverage**
+      — *done 2026-09-25.* `raw_notifications` holds one row per delivery with
+      the payload as `jsonb`; one message per change pointer goes to
+      `health.notifications.<dataType>` on a file-backed work-queue stream, and
+      the 204 waits on both. Verified end to end against a booted app: a batched
+      delivery produced one audit row with `pointer_count: 2` and two messages in
+      the stream. Readiness reports both dependencies. 143 tests, including
+      integration tests against real Postgres and real NATS in CI.
 - [x] **4. Subscriber CLI + ngrok static domain** — register a real subscriber,
       confirm live notifications land
       — *done 2026-09-24.* The subscriber named in `SUBSCRIBER_ID` was
@@ -406,11 +528,12 @@ Progress marker — tick a box only when the step is genuinely complete.
       domain; Google's handshake was observed passing from its own IPs (401 then
       200), and real `sleep` / `distance` notifications acknowledged with 204.
       Identifiers live in `.env`, never here.
-- [ ] **5. Fetcher worker** — token refresh, `list` on notified interval,
-      idempotent upsert, **plus one-off backfill CLI**
+- [ ] **5. Fetcher flow** — a Prefect flow that pulls from JetStream, refreshes
+      the token, `list`s the notified interval, upserts idempotently and **then**
+      acknowledges, **plus one-off backfill CLI**
 - [ ] **6. React dashboard** — steps, sleep, heart rate
-- [ ] **7. Dagster** — daily 7-day `:reconcile` job + push alerting on token
-      expiry
+- [ ] **7. Prefect schedule** — daily 7-day `:reconcile` flow + push alerting
+      on token expiry
 - [ ] **8. Cutover to cloudflared** — subscriber PATCH to the self-hosted URL
 
 Step 3 precedes step 4 deliberately: verification logic is tested against
@@ -419,13 +542,12 @@ fixtures before Google is ever pointed at the endpoint.
 **That ordering was deviated from**, by choice, on 2026-09-24: step 4 was done
 against a log-only receiver so that real deliveries could be seen before
 persistence was built. It was the right call for an unrelated reason — real
-traffic immediately exposed the payload-shape error that fixtures had not — but
-it means step 3 is still open, and every notification arriving now exists only
-in a log. Google retries for 7 days, so the window to land persistence without
-losing anything is exactly that long.
+traffic immediately exposed the payload-shape error that fixtures had not.
+Persistence landed the following day, within Google's 7-day retry window, so
+nothing delivered in between was lost.
 
-The dashboard precedes Dagster by choice; the backfill CLI in step 5 exists so
-the dashboard has real data to draw before the recurring job is built.
+The dashboard precedes the recurring schedule by choice; the backfill CLI in
+step 5 exists so the dashboard has real data to draw before it is built.
 
 ## Open decisions
 
@@ -440,6 +562,13 @@ user, rather than assuming.
 | ~~Role of `google-credentials.json`~~ | ~~Step 2~~ | **Settled: none.** Client ID/secret live in `.env`; the file is kept but unused |
 | ~~Logging~~ | ~~Step 3~~ | **Settled: loguru**, one aggregated record per request on `request.state`, per-route level policy defaulting to full. See *Observability* |
 | ~~Storing a log-safe user handle~~ | ~~Step 3~~ | **Settled: not stored.** A truncated SHA-256 of `healthUserId` is a pure function, so it is recomputed on demand — no column, no migration |
+| ~~Orchestrator~~ | ~~Step 7~~ | **Settled 2026-09-25: Prefect**, self-hosted. See *Orchestration* |
+| Stream and consumer configuration | Step 3 | Stream name, subject scheme, retention policy, `max_age`, and the consumer's `ack_wait` and `max_deliver`. Defaults chosen at implementation, to be revisited once real volume is visible |
+| NATS authentication | Step 3 | None on the compose network initially, with the port bound to localhost. Revisit at step 8, when the box is reachable from outside |
+| ~~Queue technology~~ | ~~Step 3~~ | **Settled 2026-09-25: NATS JetStream**, file storage. See *Orchestration* and *Why these* |
+| ~~How durability is guaranteed~~ | ~~Step 3~~ | **Settled: ordering, not atomicity.** No broker can join our transaction; commit → publish → `PubAck` → 204, and 503 otherwise, loses nothing given Google's 7-day retry |
+| What a failed flow trigger means | Step 5 | Whether a failed `run_deployment` is swallowed because the queue is the source of truth, and whether the deployment also carries an interval schedule as a sweep |
+| ~~Postgres in CI~~ | ~~Step 3~~ | **Settled 2026-09-25: yes.** A `postgres:17-alpine` service plus `pgq install` on the `backend-api` job. Declined earlier only while nothing touched a database |
 
 ## Deferred
 
@@ -452,8 +581,13 @@ user, rather than assuming.
 | Rejected | Why |
 | --- | --- |
 | Apache Kafka, Apache Airflow | Ruled out by the user |
-| Temporal | Durable execution, not a DAG engine; heavy self-host footprint |
-| RabbitMQ | Second stateful service; loses transactional enqueue |
+| Temporal | Genuine replay-based durable execution, but the unit of work here is already idempotent, so replay earns little against its footprint. Reconsidered and re-rejected 2026-09-25 |
+| Dagster | Chosen at design time, dropped 2026-09-25 before any code existed — assets and partitions model more structure than one 7-day reconcile needs |
+| Prefect as the queue as well | `run_deployment` is fire-and-forget over HTTP with no persistence or acknowledgement of its own, so a lost call is lost work |
+| RabbitMQ | Rejected as a second stateful service — an objection since withdrawn: NATS is that second service, accepted deliberately 2026-09-25 |
+| pgqueuer | Tried 2026-09-25 and dropped. Its psycopg drivers require `autocommit`, so the transactional enqueue that justified it is impossible; no synchronous consumer; `dequeue` leaves the job state machine to the caller |
+| Core NATS without JetStream | At-most-once with no replay — a message published with no subscriber connected is gone |
+| Memory-backed JetStream storage | A container restart would discard every un-fetched notification |
 | TimescaleDB | Earns nothing at single-user volume |
 | Fitbit Web API | Superseded by the Google Health API for new projects |
 | CASA verification | $500–$4,500 for one user |
@@ -461,7 +595,7 @@ user, rather than assuming.
 | Opaque session IDs | JWT preferred; revocation is near-worthless at one user |
 | 25 typed tables | Premature; display types undecided |
 | Notification-level dedupe | Cannot distinguish duplicates from genuine corrections |
-| Separate status page | Dagster UI + push alerts already cover it |
+| Separate status page | Prefect UI + push alerts already cover it |
 
 ## References
 

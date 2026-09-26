@@ -10,6 +10,8 @@ Kept free of FastAPI so the decision logic can be tested directly.
 
 import hmac
 import json
+from dataclasses import dataclass
+from typing import Any
 
 from server.webhooks.const import VERIFICATION_TYPE
 from server.webhooks.error import NotificationError
@@ -59,7 +61,24 @@ def is_verification_request(body: bytes) -> bool:
     return payload == {"type": VERIFICATION_TYPE}
 
 
-def parse_notification(body: bytes) -> list[dict]:
+@dataclass(frozen=True)
+class Delivery:
+    """One webhook delivery, parsed once.
+
+    Both halves are needed and they are not the same thing: ``pointers`` is what
+    gets published as work, while ``payload`` is what arrived and is what the
+    audit row keeps. Parsing once and carrying both avoids a second
+    ``json.loads`` of the same bytes purely to record them.
+    """
+
+    #: The delivery as Google sent it, parsed -- a list of envelopes, or a bare
+    #: object in the shape the documentation shows.
+    payload: Any
+    #: One dict per change pointer, unwrapped, in delivery order.
+    pointers: list[dict]
+
+
+def parse_notification(body: bytes) -> Delivery:
     """Unwrap the change pointers a verified notification carries.
 
     Google delivers a JSON *array* of envelopes, each holding the pointer
@@ -71,7 +90,7 @@ def parse_notification(body: bytes) -> list[dict]:
     treating it as a single pointer costs nothing.
 
     Returns:
-        One dict per change pointer, in delivery order.
+        The parsed delivery, carrying both the payload and its pointers.
     """
     try:
         payload = json.loads(body)
@@ -90,4 +109,4 @@ def parse_notification(body: bytes) -> list[dict]:
 
     if not pointers:
         raise NotificationError("body carried no change pointers")
-    return pointers
+    return Delivery(payload=payload, pointers=pointers)

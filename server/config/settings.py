@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     #: Public HTTPS origin Google delivers to.
     webhook_public_url: str
 
+    # --- Message queue ---
+    nats_url: str
+
     # --- Session cookie ---
     session_ttl_minutes: int
     cookie_secure: bool

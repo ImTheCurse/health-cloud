@@ -14,8 +14,9 @@ import httpx2
 import pytest
 from fastapi import FastAPI, Request
 
-from server.observability.context import add_event, log_id, set_user
+from server.observability.context import add_event, set_user_to_request
 from server.observability.middleware import log_requests
+from server.observability.util import hashed_log_id
 
 CALLERS = 25
 
@@ -31,7 +32,7 @@ def build_app() -> FastAPI:
 
     @app.get("/work/{caller}")
     async def work(request: Request, caller: str) -> dict:
-        set_user(request, caller)
+        set_user_to_request(request, caller)
         # Hold the record open across a suspension point, so every caller is
         # inside this handler at the same time.
         await asyncio.sleep(0.02)
@@ -47,9 +48,7 @@ async def test_concurrent_requests_keep_their_own_records(logs):
     async with httpx2.AsyncClient(
         transport=transport, base_url="http://test"
     ) as client:
-        await asyncio.gather(
-            *(client.get(f"/work/caller-{i}") for i in range(CALLERS))
-        )
+        await asyncio.gather(*(client.get(f"/work/caller-{i}") for i in range(CALLERS)))
 
     assert len(logs) == CALLERS, "one record per request, no more and no fewer"
 
@@ -62,7 +61,9 @@ async def test_concurrent_requests_keep_their_own_records(logs):
         # The user was set before the sleep and the event after it. If state
         # leaked between requests these would belong to different callers.
         caller = extra["events"][0]["caller"]
-        assert extra["user"] == log_id(caller), f"{extra['user']} is not {caller}"
+        assert extra["user"] == hashed_log_id(caller), (
+            f"{extra['user']} is not {caller}"
+        )
         assert extra["path"] == f"/work/{caller}"
 
     ids = {entry.record["extra"]["request_id"] for entry in logs}

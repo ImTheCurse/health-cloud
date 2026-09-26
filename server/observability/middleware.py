@@ -11,12 +11,12 @@ import uuid
 from fastapi import Request
 from loguru import logger
 
+from server.config.const import LOCAL_ENV
 from server.config.settings import get_settings
 from server.observability.const import ALWAYS, REQUEST_ID_HEADER
 from server.observability.context import RequestLog, attach
 from server.observability.policy import policy_for
-
-LOCAL = "local"
+from server.observability.util import is_secure
 
 
 async def log_requests(request: Request, call_next):
@@ -25,7 +25,7 @@ async def log_requests(request: Request, call_next):
         request_id=uuid.uuid4().hex,
         method=request.method,
         path=request.url.path,
-        is_secure=_is_secure(request),
+        is_secure=is_secure(request),
         x_forwarded_for=request.headers.get("X-Forwarded-For"),
     )
     attach(request, record)
@@ -73,21 +73,9 @@ def _level(record: RequestLog, request: Request) -> str:
     """
     if record.error is not None:
         return "ERROR"
-    if get_settings().environment == LOCAL:
+    if get_settings().environment == LOCAL_ENV:
         return "INFO"
     if policy_for(request.scope.get("endpoint")) == ALWAYS:
         return "INFO"
     interesting = (record.status or 0) >= 400 or record.events
     return "INFO" if interesting else "DEBUG"
-
-
-def _is_secure(request: Request) -> bool:
-    """Whether the caller reached us over TLS.
-
-    Behind a tunnel the connection to the app is plain HTTP, so the forwarded
-    protocol is what the caller actually used.
-    """
-    forwarded = request.headers.get("X-Forwarded-Proto")
-    if forwarded:
-        return forwarded == "https"
-    return request.url.scheme == "https"

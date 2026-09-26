@@ -16,6 +16,7 @@ dependencies = [
     "pyjwt>=2.14.0",
     "cryptography>=50.0.1",
     "loguru>=0.7.3",
+    "nats-py>=2.16",
 ]
 
 [dependency-groups]
@@ -25,6 +26,10 @@ dev = [
     # use `requests`; httpx is here only because Starlette's test client is
     # built on it. Starlette now wants httpx2 specifically.
     "httpx2>=0.28",
+    # The queue client is asyncio-native, so the tests that exercise it against
+    # a real broker are async. asyncio_mode = "auto" below means they need no
+    # per-test marker.
+    "pytest-asyncio>=0.24",
 ]
 
 [build-system]
@@ -37,3 +42,4 @@ packages = ["server"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"

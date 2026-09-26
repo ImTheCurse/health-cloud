@@ -37,19 +37,24 @@ Requires [uv](https://docs.astral.sh/uv/), Docker, and Node.
 
 ```bash
 cp .env.example .env     # then fill in as later steps need values
-docker compose up -d     # Postgres on :5432
+docker compose up -d     # Postgres on :5432, NATS (JetStream) on :4222
 uv sync                  # backend dependencies
 uv run uvicorn server.main:app --reload
 ```
 
 - `GET /healthz` — liveness, touches nothing
-- `GET /readyz` — readiness, checks the database
+- `GET /readyz` — readiness, checks Postgres **and** the broker, because the
+  receiver refuses to acknowledge a notification unless both are working
 
 Tests:
 
 ```bash
 uv run pytest
 ```
+
+Tests under `tests/integration/` need Postgres and NATS running; they skip when
+neither is reachable, and CI always runs them. They use a throwaway database and
+their own stream.
 
 Frontend:
 
@@ -62,4 +67,7 @@ cd client && npm install && npm run dev
 Google's webhook delivers **change pointers, not health data** — it reports
 that a data type changed for a user over an interval, and the server then
 queries the Health API for the values. The receiver's only job is to verify the
-signature, return `204`, and enqueue. See `docs/CONTEXT.md`.
+signature, record the delivery, publish the pointers, and only then return
+`204`. That order is the durability guarantee: nothing is acknowledged to Google
+until it has been written down and confirmed persisted by the broker, and any
+failure answers `503` so Google redelivers. See `docs/CONTEXT.md`.

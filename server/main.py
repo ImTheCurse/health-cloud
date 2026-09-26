@@ -10,6 +10,7 @@ from server.config.logging import configure_logging
 from server.config.settings import get_settings
 from server.db.session import create_all
 from server.observability.middleware import log_requests
+from server.providers import get_publisher
 
 # Before the app exists, so anything logged during import or startup lands in
 # the configured sink rather than loguru's default one.
@@ -19,7 +20,16 @@ configure_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_all()
-    yield
+    # One connection for the life of the process, on the loop uvicorn is already
+    # running -- the lifespan is async, so the client needs no bridging. Started
+    # here so an unreachable broker fails the boot loudly instead of surfacing as
+    # a 503 on the first real delivery.
+    publisher = get_publisher()
+    await publisher.start()
+    try:
+        yield
+    finally:
+        await publisher.stop()
 
 
 app = FastAPI(title="health-cloud", lifespan=lifespan)

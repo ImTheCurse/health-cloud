@@ -9,13 +9,13 @@ nothing is shared between requests -- two requests in flight hold two
 unrelated objects, because each wraps its own ASGI scope.
 """
 
-import hashlib
 from dataclasses import dataclass, field
 from typing import Any
 
 from starlette.requests import Request
 
-from server.observability.const import LOG_ID_BYTES, STATE_ATTRIBUTE
+from server.observability.const import STATE_ATTRIBUTE
+from server.observability.util import hashed_log_id
 
 
 @dataclass
@@ -38,7 +38,7 @@ def attach(request: Request, record: RequestLog) -> None:
     setattr(request.state, STATE_ATTRIBUTE, record)
 
 
-def request_log(request: Request) -> RequestLog | None:
+def get_request_log(request: Request) -> RequestLog | None:
     """The record for this request, or None if the middleware is not installed."""
     return getattr(request.state, STATE_ATTRIBUTE, None)
 
@@ -49,30 +49,15 @@ def add_event(request: Request, name: str, **fields: Any) -> None:
     A no-op when no record is attached, so a route stays callable in a test
     that does not mount the middleware.
     """
-    record = request_log(request)
+    record = get_request_log(request)
     if record is not None:
         record.events.append({"event": name, **fields})
 
 
-def set_user(request: Request, health_user_id: str) -> None:
+def set_user_to_request(request: Request, health_user_id: str) -> None:
     """Attach the (hashed) user this request turned out to be about."""
-    record = request_log(request)
+    record = get_request_log(request)
     if record is not None:
-        record.user = log_id(health_user_id)
+        record.user = hashed_log_id(health_user_id)
 
 
-def log_id(health_user_id: str) -> str:
-    """A short, stable, non-reversible handle for a user.
-
-    Deliberately a pure function of the id rather than a stored column: it can
-    always be recomputed to work out which user a log line refers to, so there
-    is nothing to migrate and nothing extra to keep in the database.
-
-    Example:
-        >>> log_id("1234567890123456789") == log_id("1234567890123456789")
-        True
-        >>> len(log_id("1234567890123456789"))
-        6
-    """
-    digest = hashlib.sha256(health_user_id.encode()).digest()
-    return digest[:LOG_ID_BYTES].hex()

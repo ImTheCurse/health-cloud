@@ -4,8 +4,9 @@ Google's subscriber API is write-then-confirm: there is no `get`, so every
 mutation is followed by a `list`.
 """
 
-from server.webhooks.const import DATA_TYPES, WEBHOOK_PATH, authorization_value
+from server.webhooks.const import DATA_TYPES, WEBHOOK_PATH
 from server.webhooks.subscriber import SubscriberClient
+from server.webhooks.util import authorization_value
 from tests.webhooks.fakes import (
     PROJECT,
     VALID_ENDPOINT,

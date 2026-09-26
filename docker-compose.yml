@@ -17,5 +17,28 @@ services:
       timeout: 5s
       retries: 10
 
+  nats:
+    image: nats:2-alpine
+    container_name: health-cloud-nats
+    restart: unless-stopped
+    # -js enables JetStream; without it NATS is at-most-once and persists
+    # nothing, so a notification published with no consumer attached is gone.
+    # -sd is the store directory the file-backed stream lives in.
+    command: ["-js", "-sd", "/data"]
+    ports:
+      # Bound to localhost: the broker has no authentication yet, so it must not
+      # be reachable from the network. Revisit at step 8.
+      - "127.0.0.1:${NATS_PORT:-4222}:4222"
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      # The monitoring port is not enabled, so liveness is checked by seeing
+      # whether the server accepts a TCP connection on the client port.
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8222/healthz || nc -z 127.0.0.1 4222"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres_data:
+  nats_data:

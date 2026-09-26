@@ -4,7 +4,6 @@ import datetime as dt
 
 from sqlmodel import Session
 
-from server.auth.const import REFRESH_TOKEN_LIFETIME
 from server.crypto.tokens import TokenCipher
 from server.models.user import User
 
@@ -70,9 +69,3 @@ class UserRepository:
 
     def refresh_token(self, user: User) -> str:
         return self._cipher.decrypt(user.refresh_token_enc, user.health_user_id)
-
-
-def days_until_reconsent(user: User) -> float:
-    """Days left before the refresh token dies and re-consent is required."""
-    expires_at = user.refreshed_at + REFRESH_TOKEN_LIFETIME
-    return (expires_at - dt.datetime.now(dt.UTC)).total_seconds() / 86400

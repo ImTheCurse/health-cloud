@@ -1,8 +1,5 @@
 """Receiving a change pointer: verify the signature, acknowledge, do no work."""
 
-import inspect
-
-from server.api.webhooks import receive
 from server.webhooks.const import SIGNATURE_HEADER, WEBHOOK_PATH
 from tests.conftest import logged_text
 from tests.google_webhook import (
@@ -85,11 +82,6 @@ def test_unparseable_body_with_a_valid_secret_is_refused(signer_and_client):
     )
 
     assert response.status_code == 403
-
-
-def test_the_endpoint_is_sync_so_it_cannot_block_the_event_loop():
-    """The raw body is read by an async dependency instead."""
-    assert not inspect.iscoroutinefunction(receive)
 
 
 def test_a_batched_delivery_is_acknowledged(signer_and_client):

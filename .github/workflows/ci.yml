@@ -11,6 +11,29 @@ on:
 jobs:
   backend-api:
     runs-on: ubuntu-latest
+    services:
+      # Step 3 made the database and the broker load-bearing: the receiver only
+      # answers 204 once the audit row has committed and the broker has
+      # confirmed the message. Neither guarantee can be checked against a fake,
+      # so CI runs the real things.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      # NATS is deliberately NOT a service container: the services block cannot
+      # pass a command, and JetStream only exists if the server is started with
+      # -js. A service here would run without it and every publish would fail
+      # for a reason that looks nothing like the cause. It is started in a step
+      # below instead.
     # Settings declares every field required, and importing the app builds it,
     # so the suite cannot even be collected without a full environment. These
     # are invented values, not secrets: nothing here reaches Google, Postgres
@@ -21,7 +44,10 @@ jobs:
       ENVIRONMENT: ci
       LOG_LEVEL: INFO
       # Parsed, never connected to.
+      # Points at the service container above -- a real database, unlike the
+      # other values here.
       DATABASE_URL: postgresql+psycopg://ci:ci@localhost:5432/ci
+      NATS_URL: nats://localhost:4222
       SQL_ECHO: "false"
       GOOGLE_CLIENT_ID: ci-client-id
       GOOGLE_CLIENT_SECRET: ci-client-secret
@@ -52,6 +78,22 @@ jobs:
       # pyproject.toml fails the build rather than testing a dependency set
       # nobody committed.
       - run: uv sync --locked
+
+      # -js is the whole point: without it NATS persists nothing and the
+      # durability this step exists to guarantee cannot be tested.
+      - name: Start NATS with JetStream
+        run: |
+          docker run -d --name nats -p 4222:4222 nats:2-alpine -js
+          for i in $(seq 1 30); do
+            if timeout 1 bash -c '</dev/tcp/127.0.0.1/4222'; then
+              echo "NATS accepting connections after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "NATS did not become reachable within 30s"
+          docker logs nats
+          exit 1
 
       - run: uv run pytest
 

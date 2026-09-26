@@ -12,7 +12,7 @@ import json
 import tink
 from tink import signature as tink_signature
 
-from server.webhooks.const import authorization_value
+from server.webhooks.util import authorization_value
 
 #: The shared secret the receiver is configured with in tests, and the exact
 #: header value Google would send back, built the same way the subscriber
