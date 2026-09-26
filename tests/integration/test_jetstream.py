@@ -104,7 +104,7 @@ async def test_creating_the_stream_twice_is_harmless(publisher):
     """Every boot runs it, so it has to be idempotent rather than first-run only."""
     before = (await publisher._js.stream_info(TEST_STREAM)).created
 
-    await publisher._configure_stream()
+    await publisher._configure_stream(publisher._js)
 
     assert (await publisher._js.stream_info(TEST_STREAM)).created == before
 

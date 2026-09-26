@@ -122,7 +122,9 @@ async def receive(
         # SQLModel is synchronous and this handler is not, so committing inline
         # would block the event loop uvicorn serves every other request on. The
         # threadpool is where FastAPI already runs blocking work.
-        await run_in_threadpool(_record_delivery, session, notification)
+        notification_id = await run_in_threadpool(
+            _record_delivery, session, notification
+        )
     except Exception as error:
         session.rollback()
         # The exception's *type*, never its message. A SQLAlchemy
@@ -139,7 +141,7 @@ async def receive(
 
     try:
         for pointer in delivery.pointers:
-            await publisher.publish(pointer, notification_id=notification.id)
+            await publisher.publish(pointer, notification_id=notification_id)
     except QueueError as error:
         log.add_event(request, "publish_failed", reason=str(error))
         # The audit row stays: it is a true record that this delivery arrived,
@@ -148,15 +150,23 @@ async def receive(
         logger.error("could not publish notification: {}", error)
         return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
-    log.add_event(request, "queued", notification_id=notification.id)
+    log.add_event(request, "queued", notification_id=notification_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def _record_delivery(session: Session, notification: RawNotification) -> None:
-    """Write the audit row and make its generated id available.
+def _record_delivery(session: Session, notification: RawNotification) -> int:
+    """Write the audit row and return the id the database assigned it.
 
     Separate so it reaches the threadpool as one blocking unit rather than three.
+
+    Returning the id rather than reading `notification.id` at the call site is
+    what makes it an `int`: the column is `int | None` because it is unset before
+    the insert, and every message published carries this value as the link back
+    to the row. A message with a null link would be unattributable.
     """
     session.add(notification)
     session.commit()
     session.refresh(notification)
+    if notification.id is None:  # the database assigns it; this cannot happen
+        raise RuntimeError("audit row committed without an id")
+    return notification.id

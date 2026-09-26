@@ -30,6 +30,9 @@ dev = [
     # a real broker are async. asyncio_mode = "auto" below means they need no
     # per-test marker.
     "pytest-asyncio>=0.24",
+    # Runs in CI. The codebase annotates constants Final and uses StrEnum for
+    # closed sets, neither of which means anything without a checker.
+    "mypy>=1.13",
 ]
 
 [build-system]
@@ -39,6 +42,23 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 # The import root: modules are addressed as `server.module.submodule`.
 packages = ["server"]
+
+[tool.mypy]
+python_version = "3.13"
+files = ["server"]
+# Settings reads every field from the environment, so mypy sees `Settings()` as
+# a call missing 18 required arguments without this.
+plugins = ["pydantic.mypy"]
+# An ignore that stops being needed should be removed, not left to rot.
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+# The only two dependencies that ship no type information. Named individually
+# rather than ignoring missing imports globally, so a library that *does* have
+# types is never silently skipped.
+[[tool.mypy.overrides]]
+module = ["tink.*", "google_auth_oauthlib.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

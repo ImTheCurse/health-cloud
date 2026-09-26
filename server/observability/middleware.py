@@ -13,7 +13,7 @@ from loguru import logger
 
 from server.config.const import LOCAL_ENV
 from server.config.settings import get_settings
-from server.observability.const import ALWAYS, REQUEST_ID_HEADER
+from server.observability.const import REQUEST_ID_HEADER, LogPolicy
 from server.observability.context import RequestLog, attach
 from server.observability.policy import policy_for
 from server.observability.util import is_secure
@@ -67,7 +67,7 @@ def _emit(record: RequestLog, request: Request, elapsed: float) -> None:
 def _level(record: RequestLog, request: Request) -> str:
     """How loudly to report this request.
 
-    Everything is INFO locally, and on a route that has not opted out. A QUIET
+    Everything is INFO locally, and on a route that has not opted out. A quiet
     route still speaks up when it has something to say -- an error, an
     exception, or a domain event -- and is otherwise DEBUG.
     """
@@ -75,7 +75,7 @@ def _level(record: RequestLog, request: Request) -> str:
         return "ERROR"
     if get_settings().environment == LOCAL_ENV:
         return "INFO"
-    if policy_for(request.scope.get("endpoint")) == ALWAYS:
+    if policy_for(request.scope.get("endpoint")) == LogPolicy.ALWAYS:
         return "INFO"
     interesting = (record.status or 0) >= 400 or record.events
     return "INFO" if interesting else "DEBUG"

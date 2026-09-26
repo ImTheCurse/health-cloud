@@ -7,21 +7,22 @@ out of sync the way a list of paths kept elsewhere would.
 from collections.abc import Callable
 from typing import Any
 
-from server.observability.const import ALWAYS, POLICY_ATTRIBUTE, QUIET
+from server.observability.const import POLICY_ATTRIBUTE, LogPolicy
 
 
-def log_policy(policy: str) -> Callable:
+def log_policy(policy: LogPolicy) -> Callable:
     """Mark a route's logging policy.
 
     Example:
-        >>> @log_policy(QUIET)
+        >>> @log_policy(LogPolicy.QUIET)
         ... def healthz() -> dict:
         ...     return {"status": "ok"}
-        >>> policy_for(healthz)
-        'quiet'
+        >>> policy_for(healthz) is LogPolicy.QUIET
+        True
     """
-    if policy not in (ALWAYS, QUIET):
-        raise ValueError(f"unknown log policy: {policy!r}")
+    # Raises ValueError for anything that is not a policy, which is the whole
+    # reason this is an enum -- the check used to be written out by hand.
+    policy = LogPolicy(policy)
 
     def decorate(endpoint: Callable) -> Callable:
         setattr(endpoint, POLICY_ATTRIBUTE, policy)
@@ -30,10 +31,10 @@ def log_policy(policy: str) -> Callable:
     return decorate
 
 
-def policy_for(endpoint: Any) -> str:
+def policy_for(endpoint: Any) -> LogPolicy:
     """The policy a route declared, defaulting to logging everything.
 
     Defaulting to ALWAYS means a quiet route is always visible in the source;
     a new route is never quietened just because nobody thought about it.
     """
-    return getattr(endpoint, POLICY_ATTRIBUTE, ALWAYS)
+    return getattr(endpoint, POLICY_ATTRIBUTE, LogPolicy.ALWAYS)

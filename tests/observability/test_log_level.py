@@ -4,7 +4,7 @@ Not sampling: nothing is discarded and nothing is decided by chance. The
 policy only chooses a level, so a request logged at DEBUG is still there for
 anyone who lowers the threshold to look.
 
-Locally everything is worth seeing. Elsewhere a route that opted into QUIET
+Locally everything is worth seeing. Elsewhere a route that opted into LogPolicy.QUIET
 drops routine successes to DEBUG but still speaks up when something happened.
 """
 
@@ -15,7 +15,7 @@ from fastapi import Request
 from fastapi.testclient import TestClient
 
 from server.observability import middleware
-from server.observability.const import QUIET
+from server.observability.const import LogPolicy
 from server.observability.context import RequestLog
 from server.observability.policy import log_policy
 from tests.observability.test_request_log import build_app
@@ -76,7 +76,7 @@ def test_a_quiet_route_speaks_up_on_an_error_status(deployed, logs):
 
 
 def test_a_route_that_said_nothing_is_still_logged_in_full(deployed, logs):
-    """The default is ALWAYS: a route is only quietened if it asked to be."""
+    """The default is LogPolicy.ALWAYS: a route is only quietened if it asked to be."""
     deployed.get("/plain")
 
     assert level_of(logs) == "INFO"
@@ -85,7 +85,7 @@ def test_a_route_that_said_nothing_is_still_logged_in_full(deployed, logs):
 def test_a_quiet_route_speaks_up_when_it_has_events(deployed, logs):
     """An event means something happened worth keeping, whatever the status."""
 
-    @log_policy(QUIET)
+    @log_policy(LogPolicy.QUIET)
     def endpoint() -> None: ...
 
     record = RequestLog(

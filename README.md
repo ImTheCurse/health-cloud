@@ -46,9 +46,10 @@ uv run uvicorn server.main:app --reload
 - `GET /readyz` — readiness, checks Postgres **and** the broker, because the
   receiver refuses to acknowledge a notification unless both are working
 
-Tests:
+Types and tests:
 
 ```bash
+uv run mypy      # what CI runs first
 uv run pytest
 ```
 

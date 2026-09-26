@@ -12,7 +12,7 @@ import argparse
 import sys
 
 from server.config.settings import get_settings
-from server.webhooks.const import WEBHOOK_PATH
+from server.webhooks.const import WEBHOOK_PATH, SubscriptionPolicy
 from server.webhooks.error import SubscriberError
 from server.webhooks.subscriber import SubscriberClient, describe
 
@@ -95,7 +95,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="public https origin, overriding WEBHOOK_PUBLIC_URL",
     )
     creating.add_argument(
-        "--policy", choices=["AUTOMATIC", "MANUAL"], default="AUTOMATIC"
+        "--policy",
+        type=SubscriptionPolicy,
+        choices=list(SubscriptionPolicy),
+        default=SubscriptionPolicy.AUTOMATIC,
     )
     creating.set_defaults(handler=subscriber_create)
 

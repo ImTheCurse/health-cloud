@@ -125,6 +125,26 @@ workers, where retries are free.
   own secrets would mean cleartext keysets and `secret_key_access.TOKEN`,
   plus a generator command, since a Tink keyset cannot be hand-written.
   `cryptography` and PyJWT take plain hex keys instead.
+- **Constants are `Final`, closed sets are `StrEnum`.** Every constant in a
+  `const.py` is annotated `Final`, and a constant that is one of a fixed set of
+  alternatives is an enum instead: `LogPolicy`, `SubscriptionPolicy`,
+  `SubscriberState`. `StrEnum` specifically, so members still compare equal to
+  the strings Google sends and still serialise as plain strings in JSON. The
+  payoff is that invalid values stop being writable — the CLI derives its
+  `--policy` choices from `SubscriptionPolicy` rather than repeating them, and
+  `log_policy` no longer needs a hand-written membership check. Enforced by
+  **mypy, which runs in CI** ahead of the tests, with the pydantic plugin so
+  `Settings()` and the SQLModel tables type-check, and missing-import ignores
+  named for the only two dependencies that ship no types (`tink`,
+  `google_auth_oauthlib`) rather than applied globally.
+- **Open sets stay tuples.** `DATA_TYPES` is deliberately *not* an enum. Google
+  can add a data type at any time, and an enum would turn an unrecognised one
+  into a crash on a live notification; the receiver routes unknown types to a
+  subject of their own instead. The same reasoning keeps `ENVIRONMENT` a plain
+  string.
+- **Helpers live in each module's `util.py`.** Pure helpers move out of the
+  module they serve, so a file's main abstraction is what a reader meets first.
+  A function is never left in `const.py`.
 - **Classes over module-level functions.** Collaborators take configuration
   through `__init__` and never read settings themselves, so they are
   constructible in tests without an environment. `server/providers.py` is

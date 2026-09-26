@@ -10,6 +10,8 @@ from typing import Any
 
 import nats
 from loguru import logger
+from nats.aio.client import Client
+from nats.js import JetStreamContext
 from nats.js.api import RetentionPolicy, StorageType, StreamConfig
 from nats.js.errors import NotFoundError
 
@@ -42,8 +44,8 @@ class NotificationPublisher:
         self._publish_timeout = publish_timeout
         self._connect_timeout = connect_timeout
         self._allow_direct = allow_direct
-        self._client = None
-        self._js = None
+        self._client: Client | None = None
+        self._js: JetStreamContext | None = None
 
     async def start(self) -> None:
         """Connect, and ensure the stream exists.
@@ -54,11 +56,12 @@ class NotificationPublisher:
         """
         if self._client is not None:
             return
-        self._client = await nats.connect(
-            self._url, connect_timeout=self._connect_timeout
-        )
-        self._js = self._client.jetstream()
-        await self._configure_stream()
+        client = await nats.connect(self._url, connect_timeout=self._connect_timeout)
+        js = client.jetstream()
+        await self._configure_stream(js)
+        # Assigned only once the stream exists, so a failure part-way through
+        # leaves the publisher unstarted rather than half-started.
+        self._client, self._js = client, js
         logger.info("connected to NATS at {} (stream {})", self._url, self._stream)
 
     async def stop(self) -> None:
@@ -101,7 +104,8 @@ class NotificationPublisher:
         Raises:
             PublishError: if the message was not confirmed, for any reason.
         """
-        if self._js is None:
+        js = self._js
+        if js is None:
             raise PublishError("publisher is not started")
 
         subject = subject_for(pointer.get("dataType"), self._subject_prefix)
@@ -110,9 +114,7 @@ class NotificationPublisher:
         ).encode()
 
         try:
-            return await self._js.publish(
-                subject, payload, timeout=self._publish_timeout
-            )
+            return await js.publish(subject, payload, timeout=self._publish_timeout)
         except Exception as error:
             # The payload is never logged: a change pointer carries the user's
             # health user id and the interval something happened in.
@@ -120,7 +122,7 @@ class NotificationPublisher:
                 f"publish to {subject} was not confirmed: {error}"
             ) from error
 
-    async def _configure_stream(self) -> None:
+    async def _configure_stream(self, js: JetStreamContext) -> None:
         config = StreamConfig(
             name=self._stream,
             subjects=list(self._subjects),
@@ -140,6 +142,6 @@ class NotificationPublisher:
             allow_direct=self._allow_direct,
         )
         try:
-            await self._js.update_stream(config=config)
+            await js.update_stream(config=config)
         except NotFoundError:
-            await self._js.add_stream(config=config)
+            await js.add_stream(config=config)

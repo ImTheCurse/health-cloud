@@ -9,7 +9,7 @@ import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
-from server.observability.const import QUIET
+from server.observability.const import LogPolicy
 from server.observability.context import add_event, set_user_to_request
 from server.observability.middleware import log_requests
 from server.observability.policy import log_policy
@@ -36,12 +36,12 @@ def build_app() -> FastAPI:
         raise RuntimeError("something gave way")
 
     @app.get("/quiet")
-    @log_policy(QUIET)
+    @log_policy(LogPolicy.QUIET)
     def quiet() -> dict:
         return {"ok": True}
 
     @app.get("/quiet-but-broken")
-    @log_policy(QUIET)
+    @log_policy(LogPolicy.QUIET)
     def quiet_but_broken() -> dict:
         from fastapi import HTTPException
 

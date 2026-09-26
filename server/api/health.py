@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from server.api.util import database_reachable, readiness_labels
 from server.config.settings import get_settings
 from server.db.session import SessionDep
-from server.observability.const import QUIET
+from server.observability.const import LogPolicy
 from server.observability.policy import log_policy
 from server.providers import get_publisher
 from server.queue.publisher import NotificationPublisher
@@ -17,14 +17,14 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/healthz")
-@log_policy(QUIET)
+@log_policy(LogPolicy.QUIET)
 def healthz() -> dict[str, str]:
     """Liveness: the process is up. Deliberately touches nothing."""
     return {"status": "ok", "environment": get_settings().environment}
 
 
 @router.get("/readyz")
-@log_policy(QUIET)
+@log_policy(LogPolicy.QUIET)
 def readyz(
     session: SessionDep, publisher: NotificationPublisher = Publisher
 ) -> Response:

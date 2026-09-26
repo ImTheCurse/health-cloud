@@ -10,12 +10,12 @@ from google.oauth2 import service_account
 
 from server.webhooks.const import (
     API_ROOT,
-    AUTOMATIC,
     CLOUD_PLATFORM_SCOPE,
     DATA_TYPES,
     HTTP_TIMEOUT_SECONDS,
-    STATE_ACTIVE,
     SUBSCRIBER_ID_PATTERN,
+    SubscriberState,
+    SubscriptionPolicy,
 )
 from server.webhooks.error import SubscriberError
 from server.webhooks.util import authorization_value
@@ -95,7 +95,7 @@ class SubscriberClient:
         endpoint_uri: str,
         secret: str,
         data_types: tuple[str, ...] = DATA_TYPES,
-        policy: str = AUTOMATIC,
+        policy: SubscriptionPolicy = SubscriptionPolicy.AUTOMATIC,
     ) -> dict:
         """Register the endpoint, then read back what Google stored.
 
@@ -188,7 +188,7 @@ def describe(subscriber: dict) -> str:
         return "no subscriber found"
     state = subscriber.get("state")
     secret_set = subscriber.get("endpointAuthorization", {}).get("secretSet", False)
-    healthy = secret_set and state in (None, STATE_ACTIVE)
+    healthy = secret_set and state in (None, SubscriberState.ACTIVE)
     types = sum(
         len(config.get("dataTypes", []))
         for config in subscriber.get("subscriberConfigs", [])

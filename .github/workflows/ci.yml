@@ -95,6 +95,11 @@ jobs:
           docker logs nats
           exit 1
 
+      # Before the tests: a type error is cheaper to read on its own than
+      # buried under a stack trace, and `Final` and the StrEnums mean nothing
+      # without a checker actually running.
+      - run: uv run mypy
+
       - run: uv run pytest
 
   frontend-client:

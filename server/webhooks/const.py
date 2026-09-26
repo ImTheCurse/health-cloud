@@ -1,49 +1,80 @@
 """Constants for the Google Health webhook integration."""
 
 import re
+from enum import StrEnum
+from typing import Final
 
-API_ROOT = "https://health.googleapis.com/v4"
+API_ROOT: Final = "https://health.googleapis.com/v4"
 
 #: Subscriber management is authorised by a service account holding this scope
-CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
+CLOUD_PLATFORM_SCOPE: Final = "https://www.googleapis.com/auth/cloud-platform"
 
 #: Path this app serves the receiver on, appended to the public origin.
-WEBHOOK_PATH = "/webhooks/health"
+WEBHOOK_PATH: Final = "/webhooks/health"
 
-HTTP_TIMEOUT_SECONDS = 30
+HTTP_TIMEOUT_SECONDS: Final = 30
 
 #: Google signs the raw JSON body with ECDSA P-256 / SHA-256 and sends the
 #: base64 signature in this header.
-SIGNATURE_HEADER = "GOOGLE-HEALTH-API-SIGNATURE"
+SIGNATURE_HEADER: Final = "GOOGLE-HEALTH-API-SIGNATURE"
 
 #: Public keyset Google signs notifications with. Keys rotate every 30 days and
 #: several are enabled at once, so verification uses the whole keyset and the
 #: URL is permanent: never pin a single key.
-KEYSET_URL = "https://www.gstatic.com/googlehealthapi/webhooks/webhooks_public_keyset.json"
+KEYSET_URL: Final = (
+    "https://www.gstatic.com/googlehealthapi/webhooks/webhooks_public_keyset.json"
+)
 
 #: How long a fetched keyset is trusted before being refreshed. Far shorter
 #: than the 30-day rotation, and a failed verification forces a refresh anyway.
-KEYSET_CACHE_SECONDS = 3600
+KEYSET_CACHE_SECONDS: Final = 3600
 
 #: Body Google posts during the endpoint verification handshake.
-VERIFICATION_TYPE = "verification"
+VERIFICATION_TYPE: Final = "verification"
 
 #: Google's own constraint on subscriberId, quoted from the API reference:
 #: "4-36 characters, and valid characters are /[a-z]([a-z0-9-]{2,34}[a-z0-9])/"
-SUBSCRIBER_ID_PATTERN = re.compile(r"^[a-z]([a-z0-9-]{2,34}[a-z0-9])$")
+SUBSCRIBER_ID_PATTERN: Final = re.compile(r"^[a-z]([a-z0-9-]{2,34}[a-z0-9])$")
 
-AUTOMATIC = "AUTOMATIC"
-MANUAL = "MANUAL"
+class SubscriptionPolicy(StrEnum):
+    """Who creates the per-user subscriptions.
 
-#: Subscriber.state values. ACTIVE means the verification handshake passed.
-STATE_ACTIVE = "ACTIVE"
-STATE_UNVERIFIED = "UNVERIFIED"
+    Google's own closed set, so an enum: the CLI used to repeat both values as
+    string literals in its `choices`, which is exactly the duplication that
+    drifts.
+    """
+
+    #: Google creates subscriptions on consent, with no per-user bookkeeping
+    #: from us. What this project uses.
+    AUTOMATIC = "AUTOMATIC"
+
+    #: We would have to create a subscription per user per data type.
+    MANUAL = "MANUAL"
+
+
+class SubscriberState(StrEnum):
+    """The lifecycle states the discovery document describes.
+
+    Worth knowing: the live API returns **no** `state` field at all, so code
+    reading it must treat absence as normal rather than as a fault. The values
+    are enumerated here because the discovery document defines them, not because
+    they have been observed.
+    """
+
+    #: The verification handshake passed.
+    ACTIVE = "ACTIVE"
+
+    #: Created, handshake not yet passed.
+    UNVERIFIED = "UNVERIFIED"
+
+    #: Disabled by Google, e.g. after repeated delivery failures.
+    INACTIVE = "INACTIVE"
 
 #: Every data type that can be subscribed to, in the kebab-case tokens the API
 #: expects, plus the two system events. Capture wide, model narrow: a type not
 #: subscribed to today may be unrecoverable later, since subscriptions do not
 #: backfill.
-DATA_TYPES = (
+DATA_TYPES: Final = (
     "active-zone-minutes",
     "activity-level",
     "altitude",
