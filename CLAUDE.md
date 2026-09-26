@@ -2,14 +2,20 @@
 
 ## Read the design context first
 
-`docs/CONTEXT.md` holds the agreed architecture, the reasoning behind each
-decision, the alternatives already rejected, and the build order with progress
-checkboxes. **Read it before proposing or implementing anything.** The design
-was settled through a grilling session; do not relitigate decisions recorded
-there unless the user reopens them.
+`docs/CONTEXT.md` holds the agreed architecture, the stack, the build order with
+progress checkboxes, and an index of a design doc per area. **Read it before
+proposing or implementing anything.**
 
-The build order in that file is the source of truth for what is done and what is
-next. Tick a checkbox only once the step is actually complete.
+The detail lives in the linked docs, not in `CONTEXT.md`: `stack.md`,
+`ingestion.md`, `orchestration.md`, `data-model.md`, `auth.md`,
+`observability.md`, `testing.md`, `operations.md`, `decisions.md`. **Follow the
+links and read the ones covering the area you are about to touch** — they hold
+the reasoning behind each decision and the alternatives already rejected. The
+design was settled through a grilling session; do not relitigate decisions
+recorded there unless the user reopens them.
+
+The build order in `CONTEXT.md` is the source of truth for what is done and what
+is next. Tick a checkbox only once the step is actually complete.
 
 ## Confirm before each step
 

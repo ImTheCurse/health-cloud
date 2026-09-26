@@ -5,8 +5,9 @@ Watch, and other Google Health app devices), stores it in Postgres, and
 displays it in a React dashboard. Single user.
 
 **Read [`docs/CONTEXT.md`](docs/CONTEXT.md) first** — it holds the agreed
-architecture, why each decision was made, what was rejected, and the build
-order with progress checkboxes.
+architecture, the stack, and the build order with progress checkboxes, and it
+indexes a design doc per area (ingestion, orchestration, data model, auth,
+observability, testing, operations, and the open/rejected decisions).
 
 ## Layout
 
@@ -71,4 +72,5 @@ queries the Health API for the values. The receiver's only job is to verify the
 signature, record the delivery, publish the pointers, and only then return
 `204`. That order is the durability guarantee: nothing is acknowledged to Google
 until it has been written down and confirmed persisted by the broker, and any
-failure answers `503` so Google redelivers. See `docs/CONTEXT.md`.
+failure answers `503` so Google redelivers. See
+[`docs/orchestration.md`](docs/orchestration.md).
