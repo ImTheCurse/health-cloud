@@ -29,7 +29,7 @@ from sqlmodel import Session
 
 from server.db.session import SessionDep
 from server.models.notification import RawNotification
-from server.observability import context as log
+from server.observability.context import RequestLogDep
 from server.providers import (
     get_endpoint_authorizer,
     get_publisher,
@@ -67,8 +67,8 @@ Publisher = Depends(get_publisher)
 
 @router.post(WEBHOOK_PATH)
 async def receive(
-    request: Request,
     session: SessionDep,
+    log: RequestLogDep,
     body: bytes = Body,
     authorizer: EndpointAuthorizer = Authorizer,
     verifier: SignatureVerifier = Verifier,
@@ -88,13 +88,13 @@ async def receive(
         # Check google is the one who sent the request, via its signature.
         verifier.verify(google_health_api_signature, body)
     except SignatureError as error:
-        log.add_event(request, "signature_rejected", reason=str(error))
+        log.add_event("signature_rejected", reason=str(error))
         return Response(status_code=status.HTTP_403_FORBIDDEN)
 
     try:
         delivery = parse_notification(body)
     except NotificationError as error:
-        log.add_event(request, "notification_unparseable", reason=str(error))
+        log.add_event("notification_unparseable", reason=str(error))
         logger.warning("signed notification could not be parsed: {}", error)
         return Response(status_code=status.HTTP_403_FORBIDDEN)
 
@@ -102,19 +102,17 @@ async def receive(
     # the body, and fetching them is step 5.
     for pointer in delivery.pointers:
         if health_user_id := pointer.get("healthUserId"):
-            log.set_user_to_request(request, health_user_id)
+            log.set_user(health_user_id)
         log.add_event(
-            request,
             "notification",
             operation=pointer.get("operation"),
             data_type=pointer.get("dataType"),
             intervals=len(pointer.get("intervals") or []),
         )
 
-    record = log.get_request_log(request)
     notification = RawNotification(
         received_at=dt.datetime.now(dt.UTC),
-        request_id=record.request_id if record else None,
+        request_id=log.request_id,
         body=delivery.payload,
         pointer_count=len(delivery.pointers),
     )
@@ -133,7 +131,7 @@ async def receive(
         # so logging the message would put the payload in the log the rest of
         # this module carefully keeps it out of.
         reason = type(error).__name__
-        log.add_event(request, "audit_write_failed", reason=reason)
+        log.add_event("audit_write_failed", reason=reason)
         # Nothing was queued, so nothing is half-done. Refusing means Google
         # redelivers and the notification is not lost.
         logger.error("could not record notification: {}", reason)
@@ -143,14 +141,14 @@ async def receive(
         for pointer in delivery.pointers:
             await publisher.publish(pointer, notification_id=notification_id)
     except QueueError as error:
-        log.add_event(request, "publish_failed", reason=str(error))
+        log.add_event("publish_failed", reason=str(error))
         # The audit row stays: it is a true record that this delivery arrived,
         # and the redelivery will simply add another. What must not happen is
         # acknowledging work that was never queued.
         logger.error("could not publish notification: {}", error)
         return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
-    log.add_event(request, "queued", notification_id=notification_id)
+    log.add_event("queued", notification_id=notification_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

@@ -453,11 +453,22 @@ request_id, method, path, status, duration_ms, is_secure,
 x_forwarded_for, user, events[], error{message, cause}
 ```
 
-Anything in the request adds to it with `add_event(request, name, **fields)`.
-The record lives on **`request.state`** and every accessor takes the request
-explicitly — nothing ambient, and two requests in flight hold unrelated
-objects. A concurrency test asserts that directly, and was confirmed to fail
-when isolation is deliberately broken.
+`RequestLog` is a class holding both the fields and the ways of adding to them,
+so a route writes `log.add_event(name, **fields)` and `log.set_user(id)`. It
+lives on **`request.state`** for the life of the request, and a route receives
+it as a declared dependency (`RequestLogDep`) rather than by being handed a
+`Request` it has no other use for — the webhook receiver took `request` solely
+to log, and no longer takes it at all.
+
+Nothing is ambient: two requests in flight hold unrelated records, because each
+wraps its own ASGI scope. A concurrency test asserts that directly, and was
+confirmed to fail when the dependency is made to return one shared record.
+
+A route reached **without the middleware mounted** — the normal case in a test
+exercising a route directly — gets a *detached* record from
+`RequestLog.unlogged()`. Adding to it is harmless rather than special-cased:
+nothing emits it, so it is discarded with the request. That is why no method has
+to ask whether it is real, and why no call site needs a None check.
 
 `request_id` is generated per request and echoed as `X-Request-ID`. An inbound
 one is **ignored**: this endpoint is internet-facing, and trusting a caller's

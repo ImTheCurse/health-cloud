@@ -14,7 +14,7 @@ from loguru import logger
 from server.config.const import LOCAL_ENV
 from server.config.settings import get_settings
 from server.observability.const import REQUEST_ID_HEADER, LogPolicy
-from server.observability.context import RequestLog, attach
+from server.observability.context import RequestLog
 from server.observability.policy import policy_for
 from server.observability.util import is_secure
 
@@ -28,7 +28,7 @@ async def log_requests(request: Request, call_next):
         is_secure=is_secure(request),
         x_forwarded_for=request.headers.get("X-Forwarded-For"),
     )
-    attach(request, record)
+    record.attach(request)
     started = time.perf_counter()
 
     try:

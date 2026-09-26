@@ -6,11 +6,11 @@ when the request blew up.
 """
 
 import pytest
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from server.observability.const import LogPolicy
-from server.observability.context import add_event, set_user_to_request
+from server.observability.context import RequestLogDep
 from server.observability.middleware import log_requests
 from server.observability.policy import log_policy
 from server.observability.util import hashed_log_id
@@ -26,9 +26,9 @@ def build_app() -> FastAPI:
         return {"ok": True}
 
     @app.get("/eventful")
-    def eventful(request: Request) -> dict:
-        set_user_to_request(request, FAKE_HEALTH_USER_ID)
-        add_event(request, "notification", data_type="sleep")
+    def eventful(log: RequestLogDep) -> dict:
+        log.set_user(FAKE_HEALTH_USER_ID)
+        log.add_event("notification", data_type="sleep")
         return {"ok": True}
 
     @app.get("/boom")

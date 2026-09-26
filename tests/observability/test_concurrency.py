@@ -12,9 +12,9 @@ import asyncio
 
 import httpx2
 import pytest
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 
-from server.observability.context import add_event, set_user_to_request
+from server.observability.context import RequestLogDep
 from server.observability.middleware import log_requests
 from server.observability.util import hashed_log_id
 
@@ -31,12 +31,12 @@ def build_app() -> FastAPI:
     app.middleware("http")(log_requests)
 
     @app.get("/work/{caller}")
-    async def work(request: Request, caller: str) -> dict:
-        set_user_to_request(request, caller)
+    async def work(log: RequestLogDep, caller: str) -> dict:
+        log.set_user(caller)
         # Hold the record open across a suspension point, so every caller is
         # inside this handler at the same time.
         await asyncio.sleep(0.02)
-        add_event(request, "worked", caller=caller)
+        log.add_event("worked", caller=caller)
         return {"caller": caller}
 
     return app
