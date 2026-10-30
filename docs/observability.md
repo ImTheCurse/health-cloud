@@ -47,7 +47,9 @@ recomputed to identify which user a line refers to. A raw health user id,
 combined with a data type and a timestamp, *is* a health record.
 
 **Never logged, unconditionally:** request and response bodies, `Authorization`,
-cookies, and the signature header.
+cookies, and the signature header. Prefect task progress follows the same
+principle: log only data types, counts, hashed user handles and error classes,
+not notification bodies, measurements, credentials, or raw user ids.
 
 **Log level is a per-route policy, not sampling.** Nothing is discarded and
 nothing is decided by chance; the policy only chooses a level, and a `DEBUG`

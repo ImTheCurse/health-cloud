@@ -39,6 +39,58 @@ services:
       timeout: 5s
       retries: 10
 
+  # Prefect's own database, deliberately separate from the app's.
+  prefect-postgres:
+    image: postgres:17-alpine
+    container_name: health-cloud-prefect-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: prefect
+      POSTGRES_PASSWORD: prefect
+      POSTGRES_DB: prefect
+    volumes:
+      - prefect_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prefect -d prefect"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  prefect:
+    image: prefecthq/prefect:3-latest
+    container_name: health-cloud-prefect
+    restart: unless-stopped
+    depends_on:
+      prefect-postgres:
+        condition: service_healthy
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://prefect:prefect@prefect-postgres:5432/prefect
+      PREFECT_API_URL: http://127.0.0.1:4200/api
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+    command: ["prefect", "server", "start", "--no-services"]
+    ports:
+      # Localhost only, like NATS: the server has no authentication and its API
+      # can start any registered flow run. Revisit at step 8.
+      - "127.0.0.1:${PREFECT_PORT:-4200}:4200"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:4200/api/health').status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  prefect-services:
+    image: prefecthq/prefect:3-latest
+    container_name: health-cloud-prefect-services
+    restart: unless-stopped
+    depends_on:
+      prefect:
+        condition: service_healthy
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://prefect:prefect@prefect-postgres:5432/prefect
+      PREFECT_API_URL: http://prefect:4200/api
+    command: ["prefect", "server", "services", "start"]
+
 volumes:
   postgres_data:
   nats_data:
+  prefect_db:

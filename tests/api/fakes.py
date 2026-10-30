@@ -10,6 +10,7 @@ not in, and cannot persist a message. Those live in tests/integration/.
 import threading
 from typing import Any
 
+from server.orchestration.error import TriggerError
 from server.queue.error import PublishError
 
 
@@ -76,3 +77,24 @@ class FakePublisher:
 
     def connected(self) -> bool:
         return not self.fail
+
+
+class FakeTrigger:
+    """Stands in for Prefect's REST API.
+
+    The route asks for a fetcher run after it has already answered Google, so
+    what matters is that it asks, that it asks *after* the response, and that a
+    refusal changes nothing about the answer.
+    """
+
+    def __init__(self, journal: Journal, fail: bool = False) -> None:
+        self.journal = journal
+        self.fail = fail
+        self.calls = 0
+
+    def trigger(self) -> str | None:
+        self.calls += 1
+        self.journal.append(("trigger", self.calls))
+        if self.fail:
+            raise TriggerError("Prefect is down")
+        return "run-1"

@@ -7,12 +7,13 @@ from server.db.session import get_session
 from server.main import app
 from server.providers import (
     get_endpoint_authorizer,
+    get_flow_trigger,
     get_publisher,
     get_signature_verifier,
 )
 from server.webhooks.receiver import EndpointAuthorizer
 from server.webhooks.signature import SignatureVerifier
-from tests.api.fakes import FakePublisher, FakeSession, Journal
+from tests.api.fakes import FakePublisher, FakeSession, FakeTrigger, Journal
 from tests.google_webhook import AUTH, Keyset, make_keypair
 
 #: The dependency FastAPI actually registered. SessionDep wraps the undecorated
@@ -37,7 +38,13 @@ def publisher(journal):
 
 
 @pytest.fixture
-def signer_and_client(session, publisher):
+def trigger(journal):
+    """Overridden in every route test, so none of them dials a real Prefect."""
+    return FakeTrigger(journal)
+
+
+@pytest.fixture
+def signer_and_client(session, publisher, trigger):
     """A client whose app trusts a secret and a keyset the test controls.
 
     The database and the broker are doubles: these tests are about what the
@@ -50,5 +57,6 @@ def signer_and_client(session, publisher):
     )
     app.dependency_overrides[SESSION_DEPENDENCY] = lambda: session
     app.dependency_overrides[get_publisher] = lambda: publisher
+    app.dependency_overrides[get_flow_trigger] = lambda: trigger
     yield signer, TestClient(app)
     app.dependency_overrides.clear()

@@ -35,12 +35,20 @@ follows as a result.
   imports. It exposes no `create_async_engine`, so async would require reaching
   into `sqlalchemy.ext.asyncio`. Sync also fixes the driver as `psycopg`, not
   `asyncpg`. FastAPI runs sync endpoints in a threadpool, which is ample here.
-  **One exception exists**, deliberately: `JSONB` is not re-exported, so
-  `server/models/notification.py` imports it from
-  `sqlalchemy.dialects.postgresql`. It is commented there as the exception, and
-  it is the only such import in `server/` — see [Data model](data-model.md). One
-  test also imports `sqlalchemy.exc.StatementError`, to construct the database
-  failure whose message must never be logged.
+  **Three modules reach past it**, deliberately, for two reasons — both times
+  because SQLModel re-exports the generic parts of SQLAlchemy and what is needed
+  is a Postgres-only part:
+
+  - `JSONB` for the column type, in `server/models/util.py` and
+    `server/models/notification.py`.
+  - `INSERT ... ON CONFLICT DO UPDATE` for the idempotent write, in
+    `server/db/upsert.py`, which also takes `delete` and `class_mapper` from
+    SQLAlchemy and uses `session.execute` rather than SQLModel's `session.exec`
+    (typed for SQLModel's own `select`).
+
+  Five import lines in total, each commented where it sits. One test imports
+  `sqlalchemy.exc.StatementError`, to construct the database failure whose message
+  must never be logged.
 - **Tink only where Google requires it.** Google publishes its webhook
   signing keys as a Tink keyset, so Tink verifies those. Using Tink for our
   own secrets would mean cleartext keysets and `secret_key_access.TOKEN`,

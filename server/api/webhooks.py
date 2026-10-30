@@ -13,6 +13,13 @@ outcome is therefore a duplicate audit row, never a lost notification.
 The audit row commits first on purpose. The reverse order could leave work
 queued with no record of what asked for it.
 
+Asking Prefect to start a fetcher run happens **after** the response is sent, in
+a background task, and its failure is swallowed. That is structural rather than
+lax: the notification is already durably queued, so a missed trigger delays the
+fetch until the next one or the reconcile sweep, and a hung Prefect cannot push
+the acknowledgement outside Google's deadline because the acknowledgement has
+already happened. The trigger carries no payload -- the flow reads the queue.
+
 The two handshake responses are not optional. On subscriber creation Google
 posts twice -- once with the Authorization header, once without -- and demands
 200/201 then 401/403. Failing either makes subscriber creation fail with
@@ -22,7 +29,15 @@ including parsing the body.
 
 import datetime as dt
 
-from fastapi import APIRouter, Depends, Header, Request, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Header,
+    Request,
+    Response,
+    status,
+)
 from fastapi.concurrency import run_in_threadpool
 from loguru import logger
 from sqlmodel import Session
@@ -30,8 +45,11 @@ from sqlmodel import Session
 from server.db.session import SessionDep
 from server.models.notification import RawNotification
 from server.observability.context import RequestLogDep
+from server.orchestration.client import FlowTrigger
+from server.orchestration.error import TriggerError
 from server.providers import (
     get_endpoint_authorizer,
+    get_flow_trigger,
     get_publisher,
     get_signature_verifier,
 )
@@ -63,16 +81,19 @@ Body = Depends(raw_body)
 Authorizer = Depends(get_endpoint_authorizer)
 Verifier = Depends(get_signature_verifier)
 Publisher = Depends(get_publisher)
+Trigger = Depends(get_flow_trigger)
 
 
 @router.post(WEBHOOK_PATH)
 async def receive(
     session: SessionDep,
     log: RequestLogDep,
+    background: BackgroundTasks,
     body: bytes = Body,
     authorizer: EndpointAuthorizer = Authorizer,
     verifier: SignatureVerifier = Verifier,
     publisher: NotificationPublisher = Publisher,
+    trigger: FlowTrigger = Trigger,
     authorization: str | None = Header(default=None),
     google_health_api_signature: str | None = Header(default=None),
 ) -> Response:
@@ -149,7 +170,27 @@ async def receive(
         return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     log.add_event("queued", notification_id=notification_id)
+    # Runs after this response has been sent. See the module docstring for why
+    # its failure is not this endpoint's problem.
+    background.add_task(_ask_for_a_fetch, trigger)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _ask_for_a_fetch(trigger: FlowTrigger) -> None:
+    """Nudge Prefect, and shrug if it does not answer.
+
+    Deliberately swallowing: by the time this runs the notification is persisted
+    in JetStream and Google has been told 204. The worst case is that the data is
+    fetched later, by the next notification's trigger or by the reconcile sweep.
+    Raising here would only produce an unhandled error in a background task after
+    a request that succeeded.
+    """
+    try:
+        run_id = trigger.trigger()
+    except TriggerError as error:
+        logger.warning("could not start a fetcher run: {}", error)
+        return
+    logger.debug("started fetcher run {}", run_id or "(no id returned)")
 
 
 def _record_delivery(session: Session, notification: RawNotification) -> int:

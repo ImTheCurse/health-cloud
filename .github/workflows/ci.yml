@@ -48,6 +48,8 @@ jobs:
       # other values here.
       DATABASE_URL: postgresql+psycopg://ci:ci@localhost:5432/ci
       NATS_URL: nats://localhost:4222
+      PREFECT_API_URL: http://localhost:4200/api
+      PREFECT_DEPLOYMENT_ID: 00000000-0000-0000-0000-000000000000
       SQL_ECHO: "false"
       GOOGLE_CLIENT_ID: ci-client-id
       GOOGLE_CLIENT_SECRET: ci-client-secret
@@ -77,7 +79,12 @@ jobs:
       # --locked, not --frozen: a uv.lock that no longer agrees with
       # pyproject.toml fails the build rather than testing a dependency set
       # nobody committed.
-      - run: uv sync --locked
+      #
+      # --group prefect costs ~70 extra packages the web process never imports,
+      # and buys the only thing that typechecks server/flows/. Without it mypy
+      # cannot resolve `prefect` and the flow -- the part of the pipeline that
+      # actually moves the data -- is the one module nothing checks.
+      - run: uv sync --locked --group prefect
 
       # -js is the whole point: without it NATS persists nothing and the
       # durability this step exists to guarantee cannot be tested.

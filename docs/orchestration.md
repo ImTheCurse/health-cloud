@@ -25,10 +25,29 @@ is ever needed, that is the point to revisit Temporal.
 one message per change pointer to NATS JetStream, and only then answers 204. A
 Prefect flow pulls those messages, does the work, and acknowledges each one.
 
-The receiver half is built (step 3). The flow, and the optional trigger that
-starts one promptly rather than waiting for its schedule, arrive with step 5 —
-until then messages accumulate in the stream, which is exactly what a durable
-work queue is for.
+Both halves are built (steps 3 and 5). Verified end to end against the live API on
+2026-09-28: a run picked real notifications off the stream, refreshed the token,
+fetched, upserted and acknowledged.
+
+**The trigger is a doorbell that carries no data.** The receiver asks Prefect for a
+run in a FastAPI `BackgroundTask` — *after* the 204 — and swallows any failure.
+Both halves of that are deliberate:
+
+- **After the response**, so a hung or dead Prefect structurally cannot delay
+  Google's acknowledgement. By the time it runs, the message is already persisted.
+- **No payload.** The flow's only input is the durable consumer. Sending the
+  pointers in the trigger would mean either the stream is never drained or every
+  pointer is handled twice, and it would put the work back into a fire-and-forget
+  HTTP call — which is exactly why *Prefect as the queue* was rejected.
+
+A missed trigger therefore costs latency, not data; the step 7 sweep is what makes
+swallowing it honest.
+
+**The receiver does not import `prefect`.** It calls
+`POST /api/deployments/{id}/create_flow_run` with `requests`, as a ~60-line client
+mirroring `SubscriberClient`. Importing `prefect` for one endpoint would put ~70
+packages — `alembic`, `asyncpg`, `docker` — into the web process, none of which it
+serves a request with.
 
 **NATS JetStream, not core NATS.** Core NATS is at-most-once and never replays:
 a message published while no subscriber is connected is simply gone. Durability
@@ -76,18 +95,53 @@ forget publish.
 
 **The client is asyncio-only.** `nats-py` has no synchronous client — `connect`
 and `publish` are both coroutines, and nothing in the package offers a blocking
-form. Since the receiver is deliberately synchronous, the connection lives on a
-dedicated event-loop thread opened at startup, and the route publishes with
-`asyncio.run_coroutine_threadsafe(...).result(timeout=...)`. One warm connection,
-no per-request handshake, and no event loop inside a sync route.
+form. So the route and the flow are both `async`, using the loop the framework
+already runs rather than opening one, and the blocking half — SQLModel and
+`requests` — goes to a worker thread as a single unit per pointer.
+
+**The consumer closes; it does not drain.** The publisher drains because it may
+have publishes in flight. A pull consumer has none: it asked for each batch
+explicitly and awaited every ack. Draining it is worse than pointless — `drain()`
+waits for the pull subscription to finish, a pull subscription never finishes on
+its own, so it blocks until the drain timeout and then raises `DrainTimeoutError`.
+Found by running it, 2026-09-28.
+
+**Retries live in the broker, not in Prefect.** The task has no Prefect-level
+retries. JetStream's redelivery already is the retry and it is the better one: it
+survives the process dying. A second in-process layer was written and removed —
+excluding an expired token from it needs `retry_condition_fn`, and that hands the
+state's result back as a coroutine, so the check silently never ran and the one
+error that must not be retried was being retried on every failure.
+
+**An expired token stops the whole run.** On `TokenExpiredError` the handler raises
+`DrainAborted`: the drain returns immediately with everything still queued. The
+alternative is destructive rather than merely wasteful — every remaining message
+would fail for the same reason, each failure spends one of its five `max_deliver`
+attempts, and a queue of a hundred notifications would be burned through in minutes
+and then dropped for good. Stopping costs one attempt on one message.
 
 **The flow is a pull consumer.** There is no `prefect-nats` integration; it does
-not exist on PyPI. The flow fetches a batch from a durable JetStream consumer and
-acknowledges each message **only after its upsert has committed**, which is what
-makes at-least-once mean something. A bridge process that subscribed and called
-`run_deployment` per message was rejected: it acknowledges before the work is
-durable, so a failed flow loses the message, and it adds a third process with a
-second state machine.
+not exist on PyPI. The flow drains a durable JetStream consumer — batches of 50
+until the stream is empty, `ack_wait` 60s, `max_deliver` 5 — and acknowledges each
+message **only after its upsert has committed**, which is what makes at-least-once
+mean something. A bridge process that subscribed and called `run_deployment` per
+message was rejected: it acknowledges before the work is durable, so a failed flow
+loses the message, and it adds a third process with a second state machine.
+
+Draining rather than handling one batch is what lets a single run catch up after an
+outage instead of needing one trigger per stranded message. Overlapping runs are
+safe: a work-queue stream hands each message to exactly one consumer.
+
+**Prefect run logs show fetch progress.** Each task logs its data type,
+UPSERT/DELETE operation, number of intervals and hashed user handle when it
+starts, then the fetched point/segment counts when it finishes. Failures log
+only the error class, never an exception message that may contain bound health
+data. The flow logs the drain totals and warns when any message failed or the
+drain stopped early. No pointer body, measurement, access token, or raw user id
+goes into these progress lines.
+
+An unreadable message is **terminated**, not retried — redelivery cannot make
+malformed JSON parse, and five attempts at nonsense only delay what is behind it.
 
 **JetStream's own deduplication is deliberately unused.** A `Nats-Msg-Id` within
 the stream's duplicate window would collapse repeat deliveries, which is the same
@@ -102,12 +156,15 @@ step. The NATS CLI is useful for looking at the queue but is **not** required to
 run the app or the tests -- see the [README](../README.md).
 
 **Deployment shape.** Prefect's server, its background `prefect server services`
-process, its worker and its **own** Postgres container all run under
-`docker-compose.yml`, deliberately separate from the app's Postgres: Prefect runs
-Alembic migrations over its schema, and this project's stack table says
-*Migrations: None*. Letting another tool's migrations into the app's database
-would end the ability to reason about it. The FastAPI app itself is still run by
-hand; containerising it belongs to step 8.
+process and its **own** Postgres container run under `docker-compose.yml`,
+deliberately separate from the app's Postgres: Prefect runs Alembic migrations
+over its schema, and this project's stack table says *Migrations: None*. Letting
+another tool's migrations into the app's database would end the ability to
+reason about it. The fetcher is served separately with
+`uv run --group prefect python -m server.flows.fetch deploy`; Compose does not
+start it. Its printed deployment ID must be set as `PREFECT_DEPLOYMENT_ID` for
+the receiver to trigger runs (see the [README](../README.md)). The FastAPI app
+itself is still run by hand; containerising it belongs to step 8.
 
 **Flow code lives in `server/flows/`.** The flows need `server.models`,
 `server.db` and `server.crypto`, so they share the package. The import direction

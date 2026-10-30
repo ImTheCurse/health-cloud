@@ -83,3 +83,79 @@ sequenceDiagram
 
 300 requests/minute per user; effectively ~2.5 QPS for an unverified app.
 Throttling returns `429`. Backfill must be paced accordingly.
+
+## Reading the values back
+
+The pointer says only *that* something changed. What follows is how the values are
+actually fetched, and it is almost entirely made of corrections to the reference —
+every claim below was checked against the live API on **2026-09-28**, because the
+reference had already been wrong once about the webhook payload shape.
+
+`GET /v4/users/me/dataTypes/{dataType}/dataPoints`, `pageToken` for pages, `filter`
+for the window.
+
+**Data type ids are kebab-case.** `heart-rate`. Both `heart_rate` and `heartRate`
+are rejected with *"Invalid data type ID"*, and the reference uses camelCase in one
+place and kebab-case in another. The union field inside the payload is
+camelCase (`heartRate`) even when the path segment is not, so the two are not
+interchangeable.
+
+**A real dataPoint has no identifier.** The reference describes a `name` of the form
+`users/{user}/dataTypes/{type}/dataPoints/{id}`; a real point carries exactly
+`{"dataSource", "steps"}`. So the record id is **derived** — a digest of the time
+window and the data source, deliberately excluding the measured value so that a
+correction maps to the same row instead of inserting beside it. See
+[data model](data-model.md).
+
+**`civilStartTime` is a nested object**, `{"date": {...}, "time": {...}}`, not the
+ISO string the field list implies. The flat-object parser silently returned nothing
+for every real payload and the local columns fell back to deriving from
+`startUtcOffset` — the same answer by luck, with no error either way.
+
+**The filter field is a property of the type, not of its shape.** Verified by trying
+every candidate spelling and keeping what returned 200:
+
+| Type | Filter field |
+| --- | --- |
+| `steps`, `distance`, `altitude` | `interval.start_time` |
+| `sleep` | `interval.end_time` — *not* `start_time` |
+| `weight` | `sample_time.physical_time` |
+| everything else | **none accepted** |
+
+A type with no known field is fetched **unfiltered and narrowed locally**. A guess
+would be worse: a wrong field name is a 400, and a wrong-but-valid one silently
+filters on something else.
+
+**Results come back newest first**, which is what makes unfiltered fetching viable:
+once a page falls entirely before the window, everything after it is older still and
+paging stops. Date-only daily summaries use their bare civil `date` for the same
+check, with a day's margin for the unknown UTC offset; otherwise they can hit the
+50-page safety limit while paging through history. Without the stop, fetching one
+hour of `heart-rate` walks the user's whole history.
+
+**The real page cap is ~5000**, not the documented 10000 — asking for 5000, 10000 or
+20000 all return about 4996. Session types cap at 25 and reject more rather than
+clamping. This is not a micro-optimisation: `heart-rate` produces roughly 34,000
+points a day, which is 7 pages at 5000 and 34 at 1000.
+
+**Some types cannot be read with `list` at all.** The API answers *"List is not
+supported for data type X, but the following actions are supported: ..."*:
+
+- `floors`, `total-calories`, `calories-in-heart-rate-zone` → `rollUp`/`dailyRollUp`
+  only. `floors` is collected as a per-civil-day `dailyRollUp` total in
+  `unknown_data_points`, recomputed on UPSERT and DELETE; the other two are
+  **still not collected**. Google's window is 7 days, so those remain live gaps.
+- `menstrual-period`, `moods`, `ovulation-test`, `symptoms` → `create`/`update`
+  only. User-entered, nothing to read, nothing missing.
+
+A notification for one of these is acknowledged with a warning rather than retried
+into `max_deliver`, since no number of attempts can change the answer.
+
+**Throttling and 5xx are retried** with a doubling delay, up to three times. The
+limit is 300 requests a minute for one user, and a paginated read of a
+high-frequency type reaches it on its own: `heart-rate` answered 503 partway through
+pagination during exactly this work. Failing outright would discard the pages
+already fetched.
+
+**An error body is never logged or raised.** A 4xx from this endpoint can echo the
+filter, and the filter says which user's data was requested over which window.

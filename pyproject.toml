@@ -34,6 +34,13 @@ dev = [
     # closed sets, neither of which means anything without a checker.
     "mypy>=1.13",
 ]
+# Not an API dependency, deliberately. Prefect pulls roughly 50 extra packages --
+# including alembic, asyncpg and docker -- that the web process never imports,
+# and the receiver triggers a run over Prefect's REST API rather than importing
+# it. Only the flow process installs this group.
+prefect = [
+    "prefect>=3.0",
+]
 
 [build-system]
 requires = ["hatchling"]

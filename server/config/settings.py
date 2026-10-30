@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     # --- Message queue ---
     nats_url: str
 
+    # --- Orchestration ---
+    #: Prefect's REST API, e.g. http://localhost:4200/api. The web process talks
+    #: to it over HTTP rather than importing `prefect`, which would pull ~50
+    #: packages it never serves a request with.
+    prefect_api_url: str
+    #: The fetcher deployment to start a run of. Created by
+    #: `server.flows.fetch:deploy`, which prints the id.
+    prefect_deployment_id: str
+
     # --- Session cookie ---
     session_ttl_minutes: int
     cookie_secure: bool

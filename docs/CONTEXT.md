@@ -20,13 +20,15 @@ flowchart TD
     R["Receiver<br/>verify signature, audit row,<br/>publish, 204"]
     N["NATS JetStream<br/>file storage, work queue"]
     F["Prefect flow<br/>pull, refresh token, list<br/>dataPoints, upsert, then ack"]
-    DB[("Postgres")]
+    DB[("Postgres<br/>3 tables by time shape<br/>+ segments + unknown")]
     API["FastAPI read API"]
     UI["React dashboard"]
 
     G -- webhook: change pointers --> R
     R -- one message per pointer --> N
+    R -. payload-free doorbell, after the 204 .-> F
     N -- durable pull consumer --> F
+    F -- "list dataPoints" --> G
     F --> DB
     DB --> API
     API --> UI
@@ -55,8 +57,8 @@ workers, where retries are free.
 | Outbound HTTP | `requests` |
 | OAuth flow | `google-auth-oauthlib` |
 | Crypto | `cryptography` AES-256-GCM for tokens at rest; PyJWT HS256 for session cookies; Tink **only** for Google's webhook signature keyset (step 3) |
-| Message queue | NATS JetStream, file storage, consumed by Prefect |
-| Orchestration | Prefect 3, self-hosted |
+| Message queue | NATS JetStream, file storage, drained by a Prefect pull consumer |
+| Orchestration | Prefect 3, self-hosted; triggered over its REST API, never imported by the web process |
 | Flow code | `server/flows/`, `prefect` in its own dependency group |
 | Frontend | React |
 | Layout | Monorepo: `server/` + `client/`, separate deploy artifacts |
@@ -109,9 +111,21 @@ Progress marker — tick a box only when the step is genuinely complete.
       domain; Google's handshake was observed passing from its own IPs (401 then
       200), and real `sleep` / `distance` notifications acknowledged with 204.
       Identifiers live in `.env`, never here.
-- [ ] **5. Fetcher flow** — a Prefect flow that pulls from JetStream, refreshes
+- [x] **5. Fetcher flow** — a Prefect flow that pulls from JetStream, refreshes
       the token, `list`s the notified interval, upserts idempotently and **then**
       acknowledges, **plus one-off backfill CLI**
+      — *done 2026-09-28.* Measurements land in five tables keyed on Google's three
+      time structures rather than on data type names. The receiver rings a
+      payload-free doorbell at Prefect from a background task after the 204; the
+      flow drains a durable pull consumer and acks only after each upsert commits.
+      Verified against the live API, not just against fixtures: 36,000 heart-rate
+      samples, 991 step and distance intervals, and a sleep session with 74 stages
+      written, and a second identical backfill left the row count unchanged. The
+      catch-all earned its place immediately: `daily-resting-heart-rate` turned out
+      to carry a fourth time shape and landed there intact.
+      Correcting the reference against real traffic was most of the work — kebab-case
+      type ids, no `name` on a dataPoint, `sleep` filtering on `end_time`, a ~5000
+      page cap, and seven types with no `list` at all. 299 tests.
 - [ ] **6. React dashboard** — steps, sleep, heart rate
 - [ ] **7. Prefect schedule** — daily 7-day `:reconcile` flow + push alerting
       on token expiry

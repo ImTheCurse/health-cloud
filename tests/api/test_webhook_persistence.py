@@ -30,14 +30,37 @@ def test_the_audit_row_commits_before_anything_is_published(signer_and_client, j
     """The order is the guarantee.
 
     Published first, work could be queued with nothing recording what asked for
-    it. Both doubles write to one journal, so the sequence is visible rather
+    it. All three doubles write to one journal, so the sequence is visible rather
     than inferred.
     """
     signer, client = signer_and_client
 
     deliver(client, signer)
 
-    assert journal.steps() == ["commit", "publish"]
+    assert journal.steps() == ["commit", "publish", "trigger"]
+
+
+def test_prefect_is_asked_last_of_all(signer_and_client, journal):
+    """The trigger runs in a background task, after the response is sent.
+
+    It is last because it must not be able to delay the acknowledgement: the
+    notification is already persisted in the broker by the time it runs, so the
+    fetch is guaranteed by the queue rather than by this call succeeding.
+    """
+    signer, client = signer_and_client
+
+    deliver(client, signer)
+
+    assert journal.steps()[-1] == "trigger"
+
+
+def test_one_trigger_per_delivery_not_per_pointer(signer_and_client, trigger):
+    """A run drains the whole queue, so a batched delivery needs one doorbell."""
+    signer, client = signer_and_client
+
+    deliver(client, signer, BATCHED_NOTIFICATION)
+
+    assert trigger.calls == 1
 
 
 def test_one_message_is_published_per_change_pointer(signer_and_client, publisher):
@@ -135,7 +158,7 @@ def test_only_a_fully_successful_delivery_is_acknowledged(signer_and_client, jou
     response = deliver(client, signer)
 
     assert response.status_code == 204
-    assert journal.steps() == ["commit", "publish"]
+    assert journal.steps() == ["commit", "publish", "trigger"]
 
 
 def test_a_database_failure_does_not_put_the_payload_in_the_log(
@@ -170,3 +193,32 @@ def test_a_database_failure_does_not_put_the_payload_in_the_log(
     assert FAKE_HEALTH_USER_ID not in revealed
     assert "INSERT INTO" not in revealed, "the statement must not be logged either"
     assert "StatementError" in revealed, "but the failure must still be diagnosable"
+
+
+def test_a_refused_trigger_still_acknowledges_the_delivery(
+    signer_and_client, journal, trigger
+):
+    """Prefect being down must not turn a queued notification into a 503.
+
+    This is the whole reason the trigger is a background task whose failure is
+    swallowed: the message is already persisted, and answering anything but 204
+    would make Google redeliver work that is not lost.
+    """
+    signer, client = signer_and_client
+    trigger.fail = True
+
+    response = deliver(client, signer)
+
+    assert response.status_code == 204
+    assert journal.steps() == ["commit", "publish", "trigger"]
+
+
+def test_a_refused_trigger_does_not_log_a_traceback(signer_and_client, trigger, logs):
+    """It is an expected condition, not a crash: one warning, no stack."""
+    signer, client = signer_and_client
+    trigger.fail = True
+
+    deliver(client, signer)
+
+    warnings = [record for record in logs if record.record["level"].name == "WARNING"]
+    assert any("could not start a fetcher run" in str(r.record["message"]) for r in warnings)

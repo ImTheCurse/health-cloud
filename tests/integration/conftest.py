@@ -118,3 +118,27 @@ async def publisher():
     except Exception:
         pass  # a test that never created it is not a failure
     await published.stop()
+
+
+@pytest.fixture
+async def consumer(publisher):
+    """A durable consumer over the same throwaway stream the publisher made.
+
+    Depends on ``publisher`` so the stream exists first: a pull subscription
+    against a stream that has not been created fails, and creating the stream is
+    the publisher's job on startup.
+    """
+    from server.queue.consumer import NotificationConsumer
+
+    consuming = NotificationConsumer(
+        get_settings().nats_url,
+        stream=TEST_STREAM,
+        subject_prefix=TEST_SUBJECT_PREFIX,
+        durable=f"fetcher_{_RUN}",
+        # Short, so a test asserting redelivery does not wait a minute for it.
+        ack_wait=2,
+        pull_timeout=1.0,
+    )
+    await consuming.start()
+    yield consuming
+    await consuming.stop()
