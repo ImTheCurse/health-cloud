@@ -1,0 +1,131 @@
+# Runs on every push, so every commit you push on its own gets a verdict you
+# can trust when reverting. Deliberately no `concurrency` group: cancelling a
+# superseded run would leave the commit beneath it with no result at all.
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-api:
+    runs-on: ubuntu-latest
+    services:
+      # Step 3 made the database and the broker load-bearing: the receiver only
+      # answers 204 once the audit row has committed and the broker has
+      # confirmed the message. Neither guarantee can be checked against a fake,
+      # so CI runs the real things.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      # NATS is deliberately NOT a service container: the services block cannot
+      # pass a command, and JetStream only exists if the server is started with
+      # -js. A service here would run without it and every publish would fail
+      # for a reason that looks nothing like the cause. It is started in a step
+      # below instead.
+    # Settings declares every field required, and importing the app builds it,
+    # so the suite cannot even be collected without a full environment. These
+    # are invented values, not secrets: nothing here reaches Google, Postgres
+    # or the network. Keeping them in the workflow rather than in repository
+    # secrets means a fork's push is checked too, and that a newly required
+    # field fails loudly here instead of being silently defaulted away.
+    env:
+      ENVIRONMENT: ci
+      LOG_LEVEL: INFO
+      # Parsed, never connected to.
+      # Points at the service container above -- a real database, unlike the
+      # other values here.
+      DATABASE_URL: postgresql+psycopg://ci:ci@localhost:5432/ci
+      NATS_URL: nats://localhost:4222
+      PREFECT_API_URL: http://localhost:4200/api
+      PREFECT_DEPLOYMENT_ID: 00000000-0000-0000-0000-000000000000
+      SQL_ECHO: "false"
+      GOOGLE_CLIENT_ID: ci-client-id
+      GOOGLE_CLIENT_SECRET: ci-client-secret
+      GOOGLE_REDIRECT_URI: http://localhost:8000/auth/google/callback
+      # Real 32-byte hex, because these are decoded into keys on use. The
+      # repeated digits make it obvious they were never random.
+      TOKEN_ENCRYPTION_KEY: "1111111111111111111111111111111111111111111111111111111111111111"
+      SESSION_SECRET: "2222222222222222222222222222222222222222222222222222222222222222"
+      CORS_ORIGINS: http://localhost:5173
+      GCP_PROJECT_NUMBER: "000000000000"
+      GOOGLE_APPLICATION_CREDENTIALS: service-account.json
+      SUBSCRIBER_ID: ci-subscriber
+      WEBHOOK_AUTH_SECRET: ci-webhook-secret
+      # .invalid is reserved by RFC 2606 and can never resolve.
+      WEBHOOK_PUBLIC_URL: https://ci.example.invalid
+      SESSION_TTL_MINUTES: "60"
+      COOKIE_SECURE: "false"
+      FRONTEND_URL: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      # --locked, not --frozen: a uv.lock that no longer agrees with
+      # pyproject.toml fails the build rather than testing a dependency set
+      # nobody committed.
+      #
+      # --group prefect costs ~70 extra packages the web process never imports,
+      # and buys the only thing that typechecks server/flows/. Without it mypy
+      # cannot resolve `prefect` and the flow -- the part of the pipeline that
+      # actually moves the data -- is the one module nothing checks.
+      - run: uv sync --locked --group prefect
+
+      # -js is the whole point: without it NATS persists nothing and the
+      # durability this step exists to guarantee cannot be tested.
+      - name: Start NATS with JetStream
+        run: |
+          docker run -d --name nats -p 4222:4222 nats:2-alpine -js
+          for i in $(seq 1 30); do
+            if timeout 1 bash -c '</dev/tcp/127.0.0.1/4222'; then
+              echo "NATS accepting connections after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "NATS did not become reachable within 30s"
+          docker logs nats
+          exit 1
+
+      # Before the tests: a type error is cheaper to read on its own than
+      # buried under a stack trace, and `Final` and the StrEnums mean nothing
+      # without a checker actually running.
+      - run: uv run mypy
+
+      - run: uv run pytest
+
+  frontend-client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      # npm ci refuses to run if package-lock.json and package.json disagree.
+      - run: npm ci
+
+      # There are no client tests, so the build is the only thing that catches
+      # a broken import or malformed JSX before it reaches the browser.
+      - run: npm run build

@@ -18,7 +18,8 @@ from server.auth.const import (
 )
 from server.auth.cookies import SessionCookies
 from server.auth.google import GoogleOAuthClient
-from server.auth.users import UserRepository, days_until_reconsent
+from server.auth.users import UserRepository
+from server.auth.util import days_until_reconsent
 from server.config.settings import Settings, get_settings
 from server.crypto.sessions import SessionTokenCodec
 from server.db.session import SessionDep

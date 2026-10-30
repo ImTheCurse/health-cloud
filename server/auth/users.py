@@ -4,16 +4,21 @@ import datetime as dt
 
 from sqlmodel import Session
 
-from server.auth.const import REFRESH_TOKEN_LIFETIME
 from server.crypto.tokens import TokenCipher
 from server.models.user import User
+
+
+def _aware(moment: dt.datetime | None) -> dt.datetime | None:
+    """google-auth returns a naive UTC expiry; the column is timezone-aware."""
+    if moment is None:
+        return None
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=dt.UTC)
 
 
 class UserRepository:
     """Persistence for ``users``, scoped to one database session.
 
-    Holds the session for its lifetime, matching how the fetcher worker and
-    Dagster jobs will use it.
+    Holds the session for its lifetime, matching how the fetcher flow uses it.
     """
 
     def __init__(self, session: Session, cipher: TokenCipher) -> None:
@@ -71,8 +76,28 @@ class UserRepository:
     def refresh_token(self, user: User) -> str:
         return self._cipher.decrypt(user.refresh_token_enc, user.health_user_id)
 
+    def access_token(self, user: User) -> str | None:
+        """The stored access token, or None if there is not one yet.
 
-def days_until_reconsent(user: User) -> float:
-    """Days left before the refresh token dies and re-consent is required."""
-    expires_at = user.refreshed_at + REFRESH_TOKEN_LIFETIME
-    return (expires_at - dt.datetime.now(dt.UTC)).total_seconds() / 86400
+        Encrypted at rest like the refresh token. It is short-lived, but for that
+        hour it reads the same health data.
+        """
+        if user.access_token_enc is None:
+            return None
+        return self._cipher.decrypt(user.access_token_enc, user.health_user_id)
+
+    def store_access_token(
+        self, user: User, token: str, expiry: dt.datetime | None
+    ) -> None:
+        """Record a freshly refreshed access token.
+
+        ``refreshed_at`` is deliberately *not* touched: it records when consent
+        was last granted, and the 7-day expiry countdown and its push alert are
+        computed from it. Moving it on every hourly refresh would reset that
+        countdown and hide the expiry until the moment it broke.
+        """
+        user.access_token_enc = self._cipher.encrypt(token, user.health_user_id)
+        user.access_token_expiry = _aware(expiry)
+        self._session.add(user)
+        self._session.commit()
+        self._session.refresh(user)

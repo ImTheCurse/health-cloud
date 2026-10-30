@@ -1,3 +1,5 @@
+"""CORS, which the dashboard depends on to send its session cookie."""
+
 from server.config.settings import get_settings
 
 ALLOWED = get_settings().allowed_origins[0]

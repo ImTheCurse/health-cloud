@@ -47,15 +47,40 @@ class Settings(BaseSettings):
     # credentials are included.
     cors_origins: str
 
+    # --- Webhook subscriber ---
+    # Subscriber management is a project-level API authorised by a service
+    # account, not by the per-user OAuth tokens.
+    gcp_project_number: str
+    google_application_credentials: str
+    subscriber_id: str
+    #: Registered with Google and echoed back in the Authorization header of
+    #: every notification.
+    webhook_auth_secret: str
+    #: Public HTTPS origin Google delivers to.
+    webhook_public_url: str
+
+    # --- Message queue ---
+    nats_url: str
+
+    # --- Orchestration ---
+    #: Prefect's REST API, e.g. http://localhost:4200/api. The web process talks
+    #: to it over HTTP rather than importing `prefect`, which would pull ~50
+    #: packages it never serves a request with.
+    prefect_api_url: str
+    #: The fetcher deployment to start a run of. Created by
+    #: `server.flows.fetch:deploy`, which prints the id.
+    prefect_deployment_id: str
+
     # --- Session cookie ---
     session_ttl_minutes: int
     cookie_secure: bool
     frontend_url: str
 
-
     @property
     def allowed_origins(self) -> list[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        return [
+            origin.strip() for origin in self.cors_origins.split(",") if origin.strip()
+        ]
 
 
 @lru_cache

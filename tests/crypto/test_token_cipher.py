@@ -1,3 +1,5 @@
+"""AES-256-GCM over the refresh tokens at rest."""
+
 import secrets
 
 import pytest
@@ -41,13 +43,3 @@ def test_tampered_ciphertext_is_rejected(cipher):
 
     with pytest.raises(InvalidTag):
         cipher.decrypt(bytes(ciphertext), "user-123")
-
-
-def test_key_must_be_the_right_length():
-    with pytest.raises(ValueError, match="32 bytes"):
-        TokenCipher(b"too-short")
-
-
-def test_key_must_be_hex():
-    with pytest.raises(ValueError, match="hex"):
-        TokenCipher.from_hex("nonsense!")

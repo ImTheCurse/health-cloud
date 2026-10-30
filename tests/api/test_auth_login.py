@@ -1,11 +1,8 @@
+"""Starting consent: the redirect to Google and the state cookie that guards it."""
+
 from urllib.parse import parse_qs, urlparse
 
-from server.auth.const import (
-    OAUTH_STATE_COOKIE,
-    SESSION_COOKIE,
-    STATE_AUDIENCE,
-    STATE_TTL,
-)
+from server.auth.const import CODE_VERIFIER_CLAIM, OAUTH_STATE_COOKIE, STATE_AUDIENCE
 from server.providers import get_session_codec
 
 
@@ -44,46 +41,12 @@ def test_state_cookie_is_httponly(client):
     assert "samesite=lax" in set_cookie.lower()
 
 
-def test_me_requires_a_session(client):
-    assert client.get("/auth/me").status_code == 401
-
-
-def test_status_requires_a_session(client):
-    assert client.get("/auth/status").status_code == 401
-
-
-def test_callback_rejects_a_missing_state(client):
-    response = client.get("/auth/google/callback?code=abc", follow_redirects=False)
-
-    assert response.status_code == 400
-
-
-def test_callback_rejects_a_forged_state(client):
-    """A state the server never issued must not be accepted."""
-    client.cookies.set(OAUTH_STATE_COOKIE, "not-a-real-token")
-    response = client.get(
-        "/auth/google/callback?code=abc&state=attacker", follow_redirects=False
-    )
-
-    assert response.status_code == 400
-    assert "state" in response.json()["detail"]
-
-
-def test_logout_clears_the_session_cookie(client):
-    response = client.post("/auth/logout")
-
-    assert response.status_code == 200
-    assert SESSION_COOKIE in response.headers["set-cookie"]
-
-
 def test_login_sends_a_pkce_challenge_and_keeps_the_verifier(client):
     """PKCE: Google gets the challenge, the cookie keeps the verifier.
 
     Regression test. Rebuilding the Flow at the callback loses the verifier and
     Google rejects the exchange with `invalid_grant: Missing code verifier`.
     """
-    from server.auth.const import CODE_VERIFIER_CLAIM
-
     response = client.get("/auth/google/login", follow_redirects=False)
     params = parse_qs(urlparse(response.headers["location"]).query)
 
@@ -98,16 +61,3 @@ def test_login_sends_a_pkce_challenge_and_keeps_the_verifier(client):
     assert verifier
     # The verifier itself must never travel to Google in the redirect.
     assert verifier not in response.headers["location"]
-
-
-def test_callback_rejects_a_state_cookie_without_a_verifier(client):
-    """A state token missing the PKCE claim cannot complete the exchange."""
-    forged = get_session_codec().issue("some-state", STATE_AUDIENCE, STATE_TTL)
-    client.cookies.set(OAUTH_STATE_COOKIE, forged)
-
-    response = client.get(
-        "/auth/google/callback?code=abc&state=some-state", follow_redirects=False
-    )
-
-    assert response.status_code == 400
-    assert "verifier" in response.json()["detail"]

@@ -15,6 +15,8 @@ dependencies = [
     "tink>=1.16.1",
     "pyjwt>=2.14.0",
     "cryptography>=50.0.1",
+    "loguru>=0.7.3",
+    "nats-py>=2.16",
 ]
 
 [dependency-groups]
@@ -24,6 +26,20 @@ dev = [
     # use `requests`; httpx is here only because Starlette's test client is
     # built on it. Starlette now wants httpx2 specifically.
     "httpx2>=0.28",
+    # The queue client is asyncio-native, so the tests that exercise it against
+    # a real broker are async. asyncio_mode = "auto" below means they need no
+    # per-test marker.
+    "pytest-asyncio>=0.24",
+    # Runs in CI. The codebase annotates constants Final and uses StrEnum for
+    # closed sets, neither of which means anything without a checker.
+    "mypy>=1.13",
+]
+# Not an API dependency, deliberately. Prefect pulls roughly 50 extra packages --
+# including alembic, asyncpg and docker -- that the web process never imports,
+# and the receiver triggers a run over Prefect's REST API rather than importing
+# it. Only the flow process installs this group.
+prefect = [
+    "prefect>=3.0",
 ]
 
 [build-system]
@@ -34,5 +50,23 @@ build-backend = "hatchling.build"
 # The import root: modules are addressed as `server.module.submodule`.
 packages = ["server"]
 
+[tool.mypy]
+python_version = "3.13"
+files = ["server"]
+# Settings reads every field from the environment, so mypy sees `Settings()` as
+# a call missing 18 required arguments without this.
+plugins = ["pydantic.mypy"]
+# An ignore that stops being needed should be removed, not left to rot.
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+# The only two dependencies that ship no type information. Named individually
+# rather than ignoring missing imports globally, so a library that *does* have
+# types is never silently skipped.
+[[tool.mypy.overrides]]
+module = ["tink.*", "google_auth_oauthlib.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"

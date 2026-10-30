@@ -12,16 +12,9 @@ same health data the refresh token can.
 
 from datetime import datetime
 
-from sqlmodel import Column, DateTime, Field, SQLModel
+from sqlmodel import Field, SQLModel
 
-
-def _utc_column(*, nullable: bool = True) -> Column:
-    """Timezone-aware timestamp.
-
-    sa_column bypasses SQLModel's nullability inference, so it is stated
-    explicitly here.
-    """
-    return Column(DateTime(timezone=True), nullable=nullable)
+from server.models.util import utc_column
 
 
 class User(SQLModel, table=True):
@@ -35,12 +28,12 @@ class User(SQLModel, table=True):
 
     refresh_token_enc: bytes
     access_token_enc: bytes | None = Field(default=None)
-    access_token_expiry: datetime | None = Field(default=None, sa_column=_utc_column())
+    access_token_expiry: datetime | None = Field(default=None, sa_column=utc_column())
 
     granted_scopes: str
 
-    consented_at: datetime = Field(sa_column=_utc_column(nullable=False))
+    consented_at: datetime = Field(sa_column=utc_column(nullable=False))
     #: Load-bearing: the 7-day testing-mode expiry countdown and the push alert
     #: are both computed from this.
-    refreshed_at: datetime = Field(sa_column=_utc_column(nullable=False))
-    revoked_at: datetime | None = Field(default=None, sa_column=_utc_column())
+    refreshed_at: datetime = Field(sa_column=utc_column(nullable=False))
+    revoked_at: datetime | None = Field(default=None, sa_column=utc_column())
