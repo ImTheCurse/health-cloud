@@ -71,7 +71,7 @@ def parse_civil(value: Any) -> dt.datetime | None:
     Preferred over deriving from an offset when present, since it is what Google
     itself computed.
 
-    Live traffic, 2026-09-28: the real shape nests the parts under ``date`` and
+    In live traffic the shape nests the parts under ``date`` and
     ``time`` -- ``{"date": {"year", "month", "day"}, "time": {"hours",
     "minutes"}}`` -- which is not what the reference's field list suggested. A
     flat object and an ISO string are both still accepted, because the docs

@@ -20,7 +20,7 @@ from tests.google_webhook import (
 
 
 def test_a_real_delivery_yields_its_change_pointer():
-    """Regression: an array of envelopes used to be refused outright."""
+    """A real delivery is an array of envelopes, and is accepted."""
     pointers = parse_notification(NOTIFICATION).pointers
 
     assert len(pointers) == 1

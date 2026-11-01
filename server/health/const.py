@@ -13,9 +13,8 @@ TOKEN_URI: Final = "https://oauth2.googleapis.com/token"
 
 #: Points per page. The reference says the maximum is 10000; the live API caps it
 #: at roughly 5000 -- asking for 5000, 10000 or 20000 all return the same ~4996
-#: (verified 2026-09-28). Asking for the real cap rather than the documented one
-#: matters: heart-rate produces ~34,000 points a day, which is 7 pages at this size
-#: and 34 at the 1000 this started as.
+#: Asking for the real cap rather than the documented one matters: heart-rate
+#: produces ~34,000 points a day, which is 7 pages at this size and 34 at 1000.
 #:
 #: Session types cap at 25 instead, and reject a larger ask rather than clamping.
 PAGE_SIZE: Final = 5000
@@ -26,8 +25,8 @@ SESSION_PAGE_SIZE: Final = 25
 #: looping against a rate limit.
 MAX_PAGES: Final = 50
 
-#: Google returns dataPoints **newest first** -- verified live 2026-09-28, by
-#: paging heart-rate and comparing the first and last timestamps.
+#: Google returns dataPoints **newest first**, as paging heart-rate and comparing
+#: the first and last timestamps shows.
 #:
 #: Load-bearing for unfiltered types. Without a filter the first page starts at
 #: "now", so once a page's points are older than the window being asked for,
@@ -35,9 +34,9 @@ MAX_PAGES: Final = 50
 #: there turns an unbounded walk through all history into a read bounded by the
 #: window.
 #:
-#: The number that made this necessary: heart-rate produces roughly 1,400 points
-#: an hour, so a 7-day window is around 235,000 points and 235 pages. Fetching
-#: that to keep one hour of it is what earned a 503 from Google.
+#: The scale involved: heart-rate produces roughly 1,400 points an hour, so a
+#: 7-day window is around 235,000 points and 235 pages. Fetching that to keep one
+#: hour of it earns a 503 from Google.
 RESULTS_ARE_NEWEST_FIRST: Final = True
 
 #: Retries for a transient refusal, with the delay doubling each time. 429 and 5xx
@@ -56,11 +55,10 @@ RETRYABLE_STATUSES: Final[frozenset[int]] = frozenset({429, 500, 502, 503, 504})
 EXPIRY_MARGIN_SECONDS: Final = 300
 
 #: The filter field each data type actually accepts, verified against the live
-#: API on 2026-09-28 by trying every candidate spelling and keeping what returned
-#: 200.
+#: API by trying every candidate spelling and keeping what returned 200.
 #:
 #: Not derivable from the structure, which is why this is a per-type table rather
-#: than the three-entry one it started as. ``sleep`` is a session and filters on
+#: than one entry per structure. ``sleep`` is a session and filters on
 #: ``interval.end_time``; ``steps`` is an interval and filters on
 #: ``interval.start_time``; ``heart-rate`` is a sample and accepts **no** filter
 #: field at all. The reference does not say this and got it wrong for sleep.
@@ -78,8 +76,7 @@ FILTER_FIELDS: Final[dict[str, str]] = {
 
 #: Data type ids are **kebab-case**: ``heart-rate``, not ``heart_rate`` or
 #: ``heartRate``. Both of those are rejected as "Invalid data type ID", and the
-#: reference uses camelCase in one place and kebab-case in another. Verified live,
-#: 2026-09-28.
+#: reference uses camelCase in one place and kebab-case in another.
 #:
 #: Which structure each type carries, used for two things:
 #:
@@ -133,7 +130,7 @@ SEED_STRUCTURES: Final[dict[str, TimeStructure]] = {
 }
 
 #: Types that exist but whose measurements cannot be read with ``list``.
-#: Verified live, 2026-09-28 -- the API answers "List is not supported for data
+#: The live API answers "List is not supported for data
 #: type X, but the following actions are supported: ...".
 #:
 #: Two groups, for different reasons:

@@ -27,7 +27,7 @@ services:
     command: ["-js", "-sd", "/data"]
     ports:
       # Bound to localhost: the broker has no authentication yet, so it must not
-      # be reachable from the network. Revisit at step 8.
+      # be reachable from the network. Revisit when the host is exposed.
       - "127.0.0.1:${NATS_PORT:-4222}:4222"
     volumes:
       - nats_data:/data
@@ -70,7 +70,7 @@ services:
     command: ["prefect", "server", "start", "--no-services"]
     ports:
       # Localhost only, like NATS: the server has no authentication and its API
-      # can start any registered flow run. Revisit at step 8.
+      # can start any registered flow run. Revisit when the host is exposed.
       - "127.0.0.1:${PREFECT_PORT:-4200}:4200"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:4200/api/health').status==200 else 1)\""]

@@ -12,7 +12,7 @@ jobs:
   backend-api:
     runs-on: ubuntu-latest
     services:
-      # Step 3 made the database and the broker load-bearing: the receiver only
+      # The database and the broker are load-bearing: the receiver only
       # answers 204 once the audit row has committed and the broker has
       # confirmed the message. Neither guarantee can be checked against a fake,
       # so CI runs the real things.

@@ -120,7 +120,7 @@ async def receive(
         return Response(status_code=status.HTTP_403_FORBIDDEN)
 
     # Events record change pointers, never measurements: the values are not in
-    # the body, and fetching them is step 5.
+    # the body, and are fetched later by the flow.
     for pointer in delivery.pointers:
         if health_user_id := pointer.get("healthUserId"):
             log.set_user(health_user_id)

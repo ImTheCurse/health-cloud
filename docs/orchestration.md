@@ -40,7 +40,7 @@ Both halves of that are deliberate:
   pointer is handled twice, and it would put the work back into a fire-and-forget
   HTTP call — which is exactly why *Prefect as the queue* was rejected.
 
-A missed trigger therefore costs latency, not data; the step 7 sweep is what makes
+A missed trigger therefore costs latency, not data; the step 9 sweep is what makes
 swallowing it honest.
 
 **The receiver does not import `prefect`.** It calls
@@ -164,7 +164,7 @@ reason about it. The fetcher is served separately with
 `uv run --group prefect python -m server.flows.fetch deploy`; Compose does not
 start it. Its printed deployment ID must be set as `PREFECT_DEPLOYMENT_ID` for
 the receiver to trigger runs (see the [README](../README.md)). The FastAPI app
-itself is still run by hand; containerising it belongs to step 8.
+itself is still run by hand; containerising it belongs to step 10.
 
 **Flow code lives in `server/flows/`.** The flows need `server.models`,
 `server.db` and `server.crypto`, so they share the package. The import direction

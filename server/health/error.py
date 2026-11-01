@@ -19,7 +19,7 @@ class TokenExpiredError(HealthApiError):
     Its own type because it is not a transient failure and must not be retried
     into a rate limit -- every subsequent call will fail the same way until the
     user re-consents. It is also the first of the three signals the 7-day expiry
-    mitigation watches for, so step 7's push alert keys off exactly this.
+    mitigation watches for, so the push alert keys off exactly this.
     """
 
 

@@ -35,8 +35,8 @@ def test_it_posts_to_the_deployments_create_run_endpoint():
 def test_the_trigger_carries_no_payload():
     """The flow's input is the queue. Sending the pointers here would mean either
     the stream is never drained or every pointer is handled twice -- and it would
-    put the work back into a fire-and-forget HTTP call, which is the reason
-    Prefect was rejected as the queue itself."""
+    put the work back into a fire-and-forget HTTP call, which has no persistence
+    or acknowledgement of its own."""
     transport = FakeTransport()
 
     trigger_with(transport).trigger()

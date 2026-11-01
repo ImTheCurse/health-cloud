@@ -326,9 +326,8 @@ def test_a_deleted_pointer_tombstones_rather_than_removing():
 
 
 def test_a_daily_summary_lands_in_the_catch_all():
-    """Neither an interval nor a sample. Found on the first real run rather than
-    designed for, which is the catch-all earning its place: the payload was kept
-    with no schema guessed for it."""
+    """Neither an interval nor a sample: the catch-all keeps the payload with no
+    schema guessed for it."""
     row, _ = row_for(live_daily_summary_point(), "daily-resting-heart-rate")
 
     assert isinstance(row, UnknownDataPoint)

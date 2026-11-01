@@ -52,7 +52,7 @@ class AccessTokens:
         Raises:
             TokenExpiredError: the refresh token is dead; only re-consent fixes
                 it. Deliberately distinct, so a caller does not retry it into a
-                rate limit and so step 7's alert can key off it.
+                rate limit and so the token-expiry alert can key off it.
             FetchError: the refresh failed for some other reason, and is worth
                 retrying.
         """

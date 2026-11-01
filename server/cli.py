@@ -29,9 +29,9 @@ from server.webhooks.const import WEBHOOK_PATH, SubscriptionPolicy
 from server.webhooks.error import SubscriberError
 from server.webhooks.subscriber import SubscriberClient, describe
 
-#: The window every part of this design converges on: Google retries for 7 days,
-#: a testing-mode refresh token lives 7 days, and so the furthest back a backfill
-#: can usefully reach is 7 days.
+#: Google retries undelivered notifications for 7 days and a testing-mode refresh
+#: token lives 7 days, so a 7-day backfill covers anything the webhook missed.
+#: ``--days`` reaches further: ``list`` serves months of history.
 BACKFILL_DAYS = 7
 
 

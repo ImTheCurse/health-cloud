@@ -2,9 +2,9 @@
 
 Two kinds live here, and the difference matters.
 
-``live_*`` fixtures follow **shapes verified against the real API on 2026-09-28**,
-with every value invented. The documentation turned out to be wrong in three ways
-that a test could not have caught on its own: a real point carries **no ``name``**
+``live_*`` fixtures follow **shapes verified against the real API**, with every
+value invented. They differ from the documentation in three ways that a test could
+not catch on its own: a real point carries **no ``name``**
 (only ``dataSource`` and the measurement), ``civilStartTime`` is a **nested**
 object rather than an ISO string, and ``dataSource`` holds
 ``recordingMethod``/``device``/``platform`` rather than a stream name.
@@ -195,7 +195,6 @@ def live_interval_point(
 def live_daily_summary_point(data_type: str = "daily-resting-heart-rate") -> dict[str, Any]:
     """A daily summary: a **fourth** time shape, carrying a bare ``date``.
 
-    Found on the first real run, when this type landed in ``unknown_data_points``.
     It is neither an interval nor a sample, so it stays in the catch-all until a
     table is worth building for it -- but its date is read, so the row is still
     queryable by day rather than opaque.

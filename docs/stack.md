@@ -26,9 +26,11 @@ follows as a result.
   does not guarantee.
 - **No Alembic.** SQLModel is not a migration tool — it creates tables that do
   not exist and cannot alter ones that do. That is acceptable here *only*
-  because the backfill window is 7 days: a schema change means wiping the
-  database and re-backfilling, which is cheap. **Add Alembic once there is data
-  worth preserving** (the ML history is the likely trigger).
+  because re-fetching is cheap: Google's `list` serves months of history, so a
+  schema change means dropping the affected tables (`db reset-measurements`,
+  which leaves `users` alone) and re-backfilling. When to add Alembic is an
+  [open decision](decisions.md#open-decisions), due before production cutover or
+  before stored history outgrows what Google serves.
 - **Plain Postgres.** At one person's volume, TimescaleDB earns nothing yet.
 - **Synchronous, SQLModel-only.** SQLModel re-exports `create_engine`,
   `Session`, `select` and `text`, so a sync stack needs essentially no SQLAlchemy

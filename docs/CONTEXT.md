@@ -56,7 +56,7 @@ workers, where retries are free.
 | Concurrency | Synchronous — SQLModel has no async engine |
 | Outbound HTTP | `requests` |
 | OAuth flow | `google-auth-oauthlib` |
-| Crypto | `cryptography` AES-256-GCM for tokens at rest; PyJWT HS256 for session cookies; Tink **only** for Google's webhook signature keyset (step 3) |
+| Crypto | `cryptography` AES-256-GCM for tokens at rest and, with a separate key, for health values at rest (step 6); PyJWT HS256 for session cookies; Tink **only** for Google's webhook signature keyset (step 3) |
 | Message queue | NATS JetStream, file storage, drained by a Prefect pull consumer |
 | Orchestration | Prefect 3, self-hosted; triggered over its REST API, never imported by the web process |
 | Flow code | `server/flows/`, `prefect` in its own dependency group |
@@ -81,6 +81,7 @@ and the reasoning is what stops a settled question being reopened by accident.
 | [Orchestration](orchestration.md) | Touching NATS, the Prefect flows, or anything that must not lose a notification |
 | [Data model](data-model.md) | Adding a table or column, or writing anything that upserts |
 | [Authentication and token lifetime](auth.md) | Touching OAuth, sessions, cookies, or token storage |
+| [Encryption at rest](encryption.md) | Adding a column, reading measurements, or anything that touches stored health values |
 | [Observability](observability.md) | Adding logging, or handling an error on a path that sees health data |
 | [Testing](testing.md) | Writing tests, or building a fixture |
 | [Operations](operations.md) | Registering a subscriber, changing the public URL, or deploying |
@@ -126,10 +127,20 @@ Progress marker — tick a box only when the step is genuinely complete.
       Correcting the reference against real traffic was most of the work — kebab-case
       type ids, no `name` on a dataPoint, `sleep` filtering on `end_time`, a ~5000
       page cap, and seven types with no `list` at all. 299 tests.
-- [ ] **6. React dashboard** — steps, sleep, heart rate
-- [ ] **7. Prefect schedule** — daily 7-day `:reconcile` flow + push alerting
+- [ ] **6. Encryption at rest** — application-level AES-256-GCM on every
+      health value (`value_numeric`, `value_unit`, `value`, `raw`,
+      `raw_notifications.body`) through a `TypeDecorator`, structure left in
+      plaintext; versioned format, zlib on the JSON columns; a minimal
+      decrypting read repository; an integration test that reads raw rows and
+      finds no plaintext; `db reset-measurements` CLI, then re-backfill from
+      2026-09-20. See [Encryption at rest](encryption.md)
+- [ ] **7. Read API routes** — FastAPI query routes over the read repository,
+      selecting only the columns a chart needs; aggregation in Python, since
+      encrypted values cannot be summed in SQL
+- [ ] **8. React dashboard** — steps, sleep, heart rate
+- [ ] **9. Prefect schedule** — daily 7-day `:reconcile` flow + push alerting
       on token expiry
-- [ ] **8. Cutover to cloudflared** — subscriber PATCH to the self-hosted URL
+- [ ] **10. Cutover to cloudflared** — subscriber PATCH to the self-hosted URL
 
 Step 3 precedes step 4 deliberately: verification logic is tested against
 fixtures before Google is ever pointed at the endpoint.
@@ -141,7 +152,10 @@ traffic immediately exposed the payload-shape error that fixtures had not.
 Persistence landed the following day, within Google's 7-day retry window, so
 nothing delivered in between was lost.
 
-The dashboard precedes the recurring schedule by choice; the backfill CLI in
+Encryption precedes the read API, and the read API the dashboard, because
+encrypted values cannot be filtered or aggregated in SQL: routes written against
+the plaintext schema would have to be rewritten. The dashboard precedes the
+recurring schedule by choice; the backfill CLI in
 step 5 exists so the dashboard has real data to draw before it is built.
 
 ## References

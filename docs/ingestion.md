@@ -144,7 +144,8 @@ supported for data type X, but the following actions are supported: ..."*:
 - `floors`, `total-calories`, `calories-in-heart-rate-zone` → `rollUp`/`dailyRollUp`
   only. `floors` is collected as a per-civil-day `dailyRollUp` total in
   `unknown_data_points`, recomputed on UPSERT and DELETE; the other two are
-  **still not collected**. Google's window is 7 days, so those remain live gaps.
+  **still not collected**. Google serves only a few months of history, so those
+  remain live gaps.
 - `menstrual-period`, `moods`, `ovulation-test`, `symptoms` → `create`/`update`
   only. User-entered, nothing to read, nothing missing.
 

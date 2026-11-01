@@ -42,7 +42,7 @@ async def test_each_message_gets_its_own_sequence(publisher):
 
 
 async def test_a_published_message_can_be_read_back_intact(publisher):
-    """What the flow in step 5 will receive, checked end to end."""
+    """What the fetch flow receives, checked end to end."""
     await publisher.publish(POINTER, notification_id=42)
 
     subscription = await publisher._js.pull_subscribe(

@@ -39,9 +39,8 @@ SUBSCRIBER_ID_PATTERN: Final = re.compile(r"^[a-z]([a-z0-9-]{2,34}[a-z0-9])$")
 class SubscriptionPolicy(StrEnum):
     """Who creates the per-user subscriptions.
 
-    Google's own closed set, so an enum: the CLI used to repeat both values as
-    string literals in its `choices`, which is exactly the duplication that
-    drifts.
+    Google's own closed set, so an enum: the CLI derives its `choices` from it
+    rather than repeating the values as string literals that can drift.
     """
 
     #: Google creates subscriptions on consent, with no per-user bookkeeping

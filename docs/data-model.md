@@ -39,8 +39,7 @@ Three reasons this beats both alternatives it replaced:
   same for every type, so they may as well be typed, indexed and queryable.
 - **Against one table per data type:** no dataPoint payload has *ever* been
   fetched — a webhook delivers change pointers, not values — so 29 schemas would
-  be 29 guesses from documentation, with no migrations and a 7-day window in
-  which to discover a guess was wrong. The documentation was already wrong once,
+  be 29 guesses from documentation, with no migrations to correct one. The documentation was already wrong once,
   about the webhook payload shape.
 - **Routing is discoverable.** The structure is read off the payload, so a data
   type Google adds tomorrow lands somewhere sensible without a code change.
@@ -69,6 +68,11 @@ wrong.
 
 ### Columns every measurement shares
 
+From step 6 every **value** column below — `value_numeric`, `value_unit`,
+`value`, `raw` — is encrypted at rest, and the identity and time columns stay
+plaintext so the key, the index and window queries still work. See
+[Encryption at rest](encryption.md).
+
 `health_user_id`, `data_type`, `record_id`, `start_ts`/`end_ts` (UTC, nullable),
 `local_start`/`local_end` (no timezone), `civil_date`, `value_numeric` +
 `value_unit`, `value` (the type-specific payload), `raw`, `deleted_at`,
@@ -86,10 +90,11 @@ session carries both `minutesToFallAsleep` and `minutesAfterWakeup`, neither is
 *the* measurement, and taking the first would put `12` in the column as though it
 were the value of a night's sleep.
 
-**`raw` is load-bearing, not defensive.** There are no migrations and Google's
-window is 7 days, so a column modelled wrongly would otherwise mean re-fetching
-data that has aged out. With `raw`, a corrected model is backfilled from our own
-database. It is `NOT NULL`, and that required `JSONB(none_as_null=True)`:
+**`raw` is load-bearing, not defensive.** There are no migrations, and Google
+serves only a few months of history (`list` returned steps from 120 days back and
+none from 365, probed 2026-11-01), so a column modelled wrongly would otherwise
+mean re-fetching data that may have aged out. With `raw`, a corrected model is
+backfilled from our own database. It is `NOT NULL`, and that required `JSONB(none_as_null=True)`:
 SQLAlchemy otherwise stores Python `None` as the JSON value `null`, which
 satisfies the constraint and makes "no payload" indistinguishable from "a payload
 that is null".

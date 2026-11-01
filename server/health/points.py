@@ -141,8 +141,8 @@ def record_id_of(point: dict[str, Any]) -> str:
 
     Google's reference describes a ``name`` of the form
     ``users/{user}/dataTypes/{type}/dataPoints/{id}``, and where it is present its
-    trailing segment is used. **Live traffic does not include it.** Verified
-    2026-09-28: a real ``steps`` point carries exactly ``{"dataSource", "steps"}``
+    trailing segment is used. **Live traffic does not include it**: a real
+    ``steps`` point carries exactly ``{"dataSource", "steps"}``
     -- no ``name``, no ``recordId``, nothing Google calls an identifier.
 
     So the identity is *derived*, as a digest of the fields that say which
@@ -205,10 +205,9 @@ def _times(payload: Any, structure: TimeStructure) -> dict[str, Any]:
 
     if structure is TimeStructure.UNKNOWN:
         # A daily summary carries a bare `date` rather than an interval or a
-        # sample time -- a fourth shape, found on the first real run when
-        # `daily-resting-heart-rate` landed in the unknown table. Its payload was
-        # safe there, but with no date it was not queryable by time either, and
-        # reading the one field it does have costs nothing.
+        # sample time -- a fourth shape, such as `daily-resting-heart-rate`. Its
+        # payload is safe in the unknown table, but without a date it would not be
+        # queryable by time, and reading the one field it does have costs nothing.
         return _columns(None, None, None, None) | {"civil_date": _bare_date(payload)}
 
     if structure is TimeStructure.SAMPLE:

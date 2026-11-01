@@ -45,11 +45,10 @@ async def fetch_pointer(payload: dict[str, Any]) -> str:
 
     **No Prefect-level retries, deliberately.** JetStream's redelivery already is
     the retry, and it is the better one: it survives the process dying, where an
-    in-process retry does not. A second layer was tried and removed -- excluding
-    an expired token from it needs ``retry_condition_fn``, and that hands the
-    state's result back as a coroutine, so the check silently never ran and the
-    one error that must not be retried was being retried. Found by running it,
-    2026-09-28.
+    in-process retry does not. A second layer would also need to exclude an
+    expired token, and ``retry_condition_fn`` hands the state's result back as a
+    coroutine, so such a check silently never runs and the one error that must
+    not be retried is retried.
     """
     logger = get_run_logger()
     pointer = payload.get("pointer")

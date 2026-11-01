@@ -21,7 +21,7 @@ def log_policy(policy: LogPolicy) -> Callable:
         True
     """
     # Raises ValueError for anything that is not a policy, which is the whole
-    # reason this is an enum -- the check used to be written out by hand.
+    # reason this is an enum.
     policy = LogPolicy(policy)
 
     def decorate(endpoint: Callable) -> Callable:
