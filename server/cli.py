@@ -7,6 +7,10 @@ the app does at startup: it runs Google's verification handshake against the
 live endpoint, and a restart quietly repointing or breaking the production
 subscriber would be worse than an explicit action with visible output.
 
+``db reset-measurements`` drops and recreates the measurement tables, which is
+how their schema changes without migrations. It cannot reach ``users``: the
+refresh token lives there, and losing it means re-consenting.
+
 Backfill is here for a different reason: nobody notified us about it. A
 notification is a webhook and goes through the queue; a backfill is a decision we
 made, and it calls the fetch-and-upsert unit directly. Routing it through
@@ -18,11 +22,19 @@ import argparse
 import datetime as dt
 import sys
 
-from sqlmodel import Session, select
+from sqlmodel import Session, SQLModel, select
 
 from server.config.settings import get_settings
-from server.db.session import get_session
+from server.db.session import get_session, reset_tables
 from server.health.error import HealthApiError
+from server.models.datapoint import (
+    ObservationSampleTime,
+    ObservationTimeInterval,
+    SessionSegment,
+    SessionTimeInterval,
+    UnknownDataPoint,
+)
+from server.models.notification import RawNotification
 from server.models.user import User
 from server.providers import build_fetcher, build_user_repository
 from server.webhooks.const import WEBHOOK_PATH, SubscriptionPolicy
@@ -95,6 +107,33 @@ def subscriber_delete(args: argparse.Namespace) -> None:
     settings = get_settings()
     build_client().delete(settings.subscriber_id, force=args.force)
     print(f"deleted {settings.subscriber_id}")
+
+
+def db_reset_measurements(args: argparse.Namespace) -> None:
+    """Drop the measurement tables and recreate them empty.
+
+    The list is fixed here rather than taken as an argument, so ``users`` cannot
+    be named by mistake. Without ``--force`` it only says what it would drop.
+    """
+    models: list[type[SQLModel]] = [
+        ObservationTimeInterval,
+        ObservationSampleTime,
+        SessionTimeInterval,
+        SessionSegment,
+        UnknownDataPoint,
+    ]
+    if args.include_audit:
+        models.append(RawNotification)
+    names = ", ".join(model.__table__.name for model in models)  # type: ignore[attr-defined]
+
+    if not args.force:
+        print(f"would drop and recreate, empty: {names}")
+        print("nothing changed; rerun with --force")
+        raise SystemExit(1)
+
+    reset_tables(models)
+    print(f"dropped and recreated, empty: {names}")
+    print("refill with: backfill run --types ... --days N")
 
 
 def backfill_run(args: argparse.Namespace) -> None:
@@ -218,6 +257,20 @@ def build_parser() -> argparse.ArgumentParser:
     deleting = commands.add_parser("delete", help="remove the registration")
     deleting.add_argument("--force", action="store_true")
     deleting.set_defaults(handler=subscriber_delete)
+
+    db = groups.add_parser("db", help="manage the app database's tables")
+    db_commands = db.add_subparsers(dest="command", required=True)
+    resetting = db_commands.add_parser(
+        "reset-measurements",
+        help="drop the measurement tables and recreate them empty; users is kept",
+    )
+    resetting.add_argument("--force", action="store_true", help="actually drop them")
+    resetting.add_argument(
+        "--include-audit",
+        action="store_true",
+        help="also drop raw_notifications, the webhook audit log",
+    )
+    resetting.set_defaults(handler=db_reset_measurements)
 
     backfill = groups.add_parser(
         "backfill", help="fetch a past window directly, bypassing the queue"

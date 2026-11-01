@@ -1,6 +1,6 @@
 """Engine and session handling."""
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Annotated
 
@@ -44,3 +44,15 @@ SessionDep = Annotated[Session, Depends(get_session.__wrapped__)]
 
 def create_all() -> None:
     SQLModel.metadata.create_all(_engine)
+
+
+def reset_tables(models: Sequence[type[SQLModel]]) -> None:
+    """Drop the tables behind ``models`` and recreate them, empty.
+
+    How a column changes type without migrations: ``create_all()`` only creates
+    tables that are missing, so a changed table must be dropped first. Tables not
+    named are left alone, with their rows.
+    """
+    tables = [SQLModel.metadata.tables[model.__table__.name] for model in models]  # type: ignore[attr-defined]
+    SQLModel.metadata.drop_all(_engine, tables=tables)
+    SQLModel.metadata.create_all(_engine, tables=tables)

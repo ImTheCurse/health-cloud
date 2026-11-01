@@ -17,8 +17,10 @@ from server.auth.google import GoogleOAuthClient
 from server.auth.users import UserRepository
 from server.config.const import LOCAL_ENV
 from server.config.settings import get_settings
+from server.crypto.data import DataCipher
 from server.crypto.sessions import SessionTokenCodec
 from server.crypto.tokens import TokenCipher
+from server.db.measurements import MeasurementRepository
 from server.health.client import HealthDataClient
 from server.health.credentials import AccessTokens
 from server.health.fetcher import Fetcher
@@ -32,6 +34,12 @@ from server.webhooks.util import authorization_value
 @lru_cache
 def get_token_cipher() -> TokenCipher:
     return TokenCipher.from_hex(get_settings().token_encryption_key)
+
+
+@lru_cache
+def get_data_cipher() -> DataCipher:
+    """The cipher the encrypted column types resolve when a value is bound or read."""
+    return DataCipher.from_hex(get_settings().data_encryption_key)
 
 
 @lru_cache
@@ -109,6 +117,11 @@ def get_health_client() -> HealthDataClient:
 def build_user_repository(session: Session) -> UserRepository:
     """Row access for ``users``, bound to one session."""
     return UserRepository(session, get_token_cipher())
+
+
+def build_measurement_repository(session: Session) -> MeasurementRepository:
+    """Decrypted reads of the measurement tables, bound to one session."""
+    return MeasurementRepository(session)
 
 
 def build_fetcher(session: Session) -> Fetcher:

@@ -37,18 +37,20 @@ follows as a result.
   imports. It exposes no `create_async_engine`, so async would require reaching
   into `sqlalchemy.ext.asyncio`. Sync also fixes the driver as `psycopg`, not
   `asyncpg`. FastAPI runs sync endpoints in a threadpool, which is ample here.
-  **Three modules reach past it**, deliberately, for two reasons — both times
-  because SQLModel re-exports the generic parts of SQLAlchemy and what is needed
-  is a Postgres-only part:
+  **Three modules reach past it**, deliberately, each because SQLModel does not
+  re-export what is needed:
 
-  - `JSONB` for the column type, in `server/models/util.py` and
-    `server/models/notification.py`.
+  - `TypeDecorator` and `LargeBinary` for the encrypted column types, in
+    `server/models/encrypted.py` — see [Encryption at rest](encryption.md).
   - `INSERT ... ON CONFLICT DO UPDATE` for the idempotent write, in
     `server/db/upsert.py`, which also takes `delete` and `class_mapper` from
     SQLAlchemy and uses `session.execute` rather than SQLModel's `session.exec`
     (typed for SQLModel's own `select`).
+  - `select` in `server/db/measurements.py`, because SQLModel's is typed for at
+    most four columns and a read that names its columns — to avoid decrypting
+    the rest — needs more.
 
-  Five import lines in total, each commented where it sits. One test imports
+  Each import is commented where it sits. One test imports
   `sqlalchemy.exc.StatementError`, to construct the database failure whose message
   must never be logged.
 - **Tink only where Google requires it.** Google publishes its webhook

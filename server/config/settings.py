@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     #: Echo every statement and its bound parameters to the log. Keep off
     #: outside local debugging: the users table holds email, display name
-    #: and Google subject id, and data_points will hold measurements.
+    #: and Google subject id in plaintext.
     sql_echo: bool
 
     # --- Google OAuth ---
@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # --- Secrets, hex encoded: openssl rand -hex 32 ---
     token_encryption_key: str
     session_secret: str
+    #: Encrypts every stored health value. Separate from the token key, so one
+    #: leaking does not expose the other.
+    data_encryption_key: str
 
     # --- CORS: exact origins allowed to send credentialed requests ---
     # Comma separated. Never '*' -- browsers reject a wildcard when
