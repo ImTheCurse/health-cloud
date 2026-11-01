@@ -49,7 +49,7 @@ workers, where retries are free.
 | --- | --- |
 | Language | Python 3.13 (backend), JavaScript (frontend — not TypeScript) |
 | Web framework | FastAPI |
-| ORM / models | SQLModel only — one direct SQLAlchemy import, for `JSONB` |
+| ORM / models | SQLModel, reaching into SQLAlchemy only where SQLModel re-exports nothing usable — see [the stack](stack.md) |
 | Migrations | **None.** `SQLModel.metadata.create_all()` only |
 | Database | Postgres, plain (no TimescaleDB) |
 | DB driver | `psycopg` (sync) |
@@ -127,13 +127,19 @@ Progress marker — tick a box only when the step is genuinely complete.
       Correcting the reference against real traffic was most of the work — kebab-case
       type ids, no `name` on a dataPoint, `sleep` filtering on `end_time`, a ~5000
       page cap, and seven types with no `list` at all. 299 tests.
-- [ ] **6. Encryption at rest** — application-level AES-256-GCM on every
-      health value (`value_numeric`, `value_unit`, `value`, `raw`,
-      `raw_notifications.body`) through a `TypeDecorator`, structure left in
-      plaintext; versioned format, zlib on the JSON columns; a minimal
-      decrypting read repository; an integration test that reads raw rows and
-      finds no plaintext; `db reset-measurements` CLI, then re-backfill from
-      2026-09-20. See [Encryption at rest](encryption.md)
+- [x] **6. Encryption at rest** — application-level AES-256-GCM on every
+      health value (`value_numeric`, `value_unit`, `value`, `raw`, segment
+      `label` and `value`, `raw_notifications.body`) through a `TypeDecorator`,
+      structure left in plaintext; versioned format, zlib on the JSON columns; a
+      minimal decrypting read repository; an integration test that reads raw rows
+      and finds no plaintext; `db reset-measurements` CLI.
+      See [Encryption at rest](encryption.md)
+      — *done 2026-11-01.* The existing rows were re-encrypted in place in one
+      transaction rather than reset and re-backfilled: the backfill cannot reach
+      heart-rate older than about a week, so a reset would have lost most of it.
+      Nothing was lost, the audit log included. Verified on the real database: no
+      plaintext found in any value, and every row read back decrypted. A
+      dropped-encryption mutation of one column fails 6 tests. 345 tests.
 - [ ] **7. Read API routes** — FastAPI query routes over the read repository,
       selecting only the columns a chart needs; aggregation in Python, since
       encrypted values cannot be summed in SQL

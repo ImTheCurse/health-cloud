@@ -94,10 +94,9 @@ were the value of a night's sleep.
 serves only a few months of history (`list` returned steps from 120 days back and
 none from 365, probed 2026-11-01), so a column modelled wrongly would otherwise
 mean re-fetching data that may have aged out. With `raw`, a corrected model is
-backfilled from our own database. It is `NOT NULL`, and that required `JSONB(none_as_null=True)`:
-SQLAlchemy otherwise stores Python `None` as the JSON value `null`, which
-satisfies the constraint and makes "no payload" indistinguishable from "a payload
-that is null".
+backfilled from our own database. It is `NOT NULL`, and the encrypted column
+type keeps Python `None` as SQL NULL rather than encrypting it, so the constraint
+bites and "no payload" stays distinguishable from "a payload that is null".
 
 **Segments are their own table** because they are what a chart draws — a sleep
 graph is the stages, not the session — and a JSONB array cannot be filtered by
@@ -109,13 +108,11 @@ the table is generic and `segment_type` carries Google's name. They are
 corrected session's stages must supersede the previous ones rather than
 accumulate.
 
-**Settled at step 3:** SQLModel exports generic `JSON` (Postgres `json`) but no
-`JSONB`, and `json` can carry neither a GIN index nor a value comparison without
-a cast. So `raw_notifications.body` and every JSONB column above use
-`sqlalchemy.dialects.postgresql`, via `server/models/util.py` — see the
-[stack](stack.md) for the two deliberate exceptions to the SQLModel-only rule.
-No GIN index exists yet; choosing `jsonb` now means one can be added later
-without rewriting the column.
+**Payload columns are encrypted `bytea`, not `jsonb`.** `value`, `raw`, the
+segments' `value` and `raw_notifications.body` hold zlib-compressed, encrypted
+JSON (see [Encryption at rest](encryption.md)), so JSON operators and GIN indexes
+do not apply to them. Anything a query must filter on belongs in a plaintext
+structure column.
 
 ### Idempotency
 

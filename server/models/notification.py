@@ -9,13 +9,9 @@ fetch is always yes and dedupe happens at the data level.
 from datetime import datetime
 from typing import Any
 
-# The one place the project reaches past SQLModel into SQLAlchemy. SQLModel
-# re-exports generic `JSON` (Postgres `json`) but no `JSONB`, and `json` cannot
-# carry a GIN index or compare values without a cast. Everything else in the
-# codebase stays SQLModel-only.
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Column, Field, SQLModel
 
+from server.models.encrypted import EncryptedJSON
 from server.models.util import utc_column
 
 
@@ -31,10 +27,10 @@ class RawNotification(SQLModel, table=True):
     #: without the middleware mounted is still worth recording.
     request_id: str | None = Field(default=None, index=True)
 
-    #: The delivery exactly as Google sent it, parsed. Stored as jsonb rather
-    #: than the original bytes: queryable, at the cost of no longer being able
-    #: to re-verify the signature from the database, which nothing does.
-    body: Any = Field(sa_column=Column(JSONB, nullable=False))
+    #: The delivery as Google sent it, parsed and encrypted. Parsed rather than
+    #: the original bytes, so the signature cannot be re-verified from the
+    #: database, which nothing does.
+    body: Any = Field(sa_column=Column(EncryptedJSON(), nullable=False))
 
     #: How many change pointers the delivery carried. Google batches, so this is
     #: routinely more than one, and it makes "did we publish everything?"

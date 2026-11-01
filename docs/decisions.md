@@ -45,8 +45,9 @@ user, rather than assuming.
 - **Deep historical backfill** beyond the earliest stored day. `list` served
   steps from 120 days back and none from 365 (probed 2026-11-01). The backfill
   splits a window into days and unfiltered types page from now backwards per
-  day, so cost grows with the square of the window; going deep wants a single
-  pass for unfiltered types
+  day, so cost grows with the square of the window, and the 50-page cap stops
+  heart-rate after roughly a week. Going deep wants a single pass for
+  unfiltered types
 - **Binding Postgres to `127.0.0.1`** and replacing the default password — it
   is published on every interface today. The user's own task
 - The ML layer over collected data — `raw_notifications` and the `raw` column
@@ -75,5 +76,4 @@ user, rather than assuming.
 | `pgcrypto` | The key travels inside SQL, reachable through `pg_stat_statements`, logs and injection |
 | TDE (`pg_tde`, EDB) | Not in vanilla Postgres 17; and, like LUKS, decrypts for any querying client |
 | An explicit cipher collaborator at each read and write site | Turns model fields into `bytes` and every read site into a place to forget a decrypt; a `TypeDecorator` keeps types and is resolved lazily |
-| Re-encrypting existing rows in place | Needs the key inside a migration; dropping and re-backfilling loses nothing while Google serves the history |
 | Separate status page | Prefect UI + push alerts already cover it |

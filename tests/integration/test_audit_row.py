@@ -1,8 +1,7 @@
 """The audit row against real Postgres.
 
-The body column is `jsonb`, which is the one place this project reaches past
-SQLModel into SQLAlchemy. Whether that actually round-trips a delivery is not
-something a double can answer.
+The body column is encrypted JSON. Whether a delivery actually round-trips
+through it is not something a double can answer.
 """
 
 import datetime as dt
@@ -24,7 +23,7 @@ def a_row(**overrides):
     return RawNotification(**{**values, **overrides})
 
 
-def test_a_delivery_round_trips_through_jsonb(session):
+def test_a_delivery_round_trips_through_encryption(session):
     """Nested structure, lists and all, must come back unchanged."""
     session.add(a_row())
     session.commit()
@@ -68,24 +67,6 @@ def test_the_log_is_append_only_in_practice(session):
     session.commit()
 
     assert len(session.exec(select(RawNotification)).all()) == 2
-
-
-def test_the_body_is_queryable_as_json_not_just_stored(session):
-    """The reason for jsonb over a text column: the ML work will read this.
-
-    A `text` column could hold the same characters but could not be indexed or
-    compared without a cast, which is what the column type buys.
-    """
-    session.add(a_row())
-    session.commit()
-
-    found = session.exec(
-        select(RawNotification).where(
-            RawNotification.body[0]["data"]["dataType"].as_string() == "steps"
-        )
-    ).all()
-
-    assert len(found) == 1
 
 
 def test_each_test_starts_with_an_empty_table(session):

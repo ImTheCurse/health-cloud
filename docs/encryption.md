@@ -50,7 +50,9 @@ Every **value**; none of the **structure**.
 | --- | --- |
 | `value_numeric`, `value_unit` — uncompressed | `health_user_id`, `data_type`, `record_id` — the natural key and `ON CONFLICT` target |
 | `value`, `raw` — zlib, then encrypted | `start_ts`/`end_ts`, `local_start`/`local_end`, `civil_date` — the chart index and window queries |
-| `raw_notifications.body` — zlib, then encrypted | `deleted_at`, `fetched_at`, `segment_type` |
+| `session_segments.label` — uncompressed; for a sleep stage, the label *is* the measurement | `deleted_at`, `fetched_at` |
+| `session_segments.value` — zlib, then encrypted | `session_segments`: `session_id`, `segment_type` and its times |
+| `raw_notifications.body` — zlib, then encrypted | `raw_notifications`: `received_at`, `request_id`, `pointer_count` |
 | | all of `users` — its tokens are already encrypted by the token cipher |
 
 The cost: an encrypted column cannot be filtered, indexed or aggregated in SQL.
@@ -62,16 +64,21 @@ GIN index on `value`/`raw` are given up with it.
 ## Format
 
 ```
-version (1 byte) ‖ nonce (12 bytes) ‖ ciphertext ‖ GCM tag (16 bytes)
+header (1 byte) ‖ nonce (12 bytes) ‖ ciphertext ‖ GCM tag (16 bytes)
 ```
 
-- **The version byte** says which key and which encoding. Version 1 is the only
-  one: one key, zlib-compressed JSON for the payload columns, uncompressed bytes
-  for scalars. It exists so a future key rotation can read old rows with the old
-  key; no rotation tooling is built until it is needed.
-- **No associated data.** A ciphertext is not bound to its row, so an attacker
-  with SQL *write* access could swap ciphertexts between rows undetected. The
-  threat is reading, not tampering; binding is [deferred](decisions.md#deferred).
+- **The header byte** says which key and which encoding: the low seven bits are
+  the key version, the high bit (`0x80`) is set when the plaintext was
+  zlib-compressed. Key version 1 is the only one, so a stored value starts with
+  `0x81` (JSON) or `0x01` (scalar). The version exists so a future key rotation
+  can read old rows with the old key; no rotation tooling is built until it is
+  needed.
+- **The header is authenticated**, passed to GCM as associated data, so editing
+  the compression flag or the key version fails to decrypt instead of misreading
+  the value.
+- **Nothing binds a ciphertext to its row.** An attacker with SQL *write* access
+  could swap ciphertexts between rows undetected. The threat is reading, not
+  tampering; binding is [deferred](decisions.md#deferred).
 - **Compression is per column, not per row.** zlib on a three-byte scalar makes
   it bigger, so only the JSON columns compress.
 
@@ -104,7 +111,9 @@ Structure columns and indexes add about 5 GB a year, unchanged by any of this.
 
 ## How it is wired
 
-A **SQLAlchemy `TypeDecorator`** on the model columns, so model fields keep their
+`DataCipher` in `server/crypto/data.py`, and `EncryptedJSON`,
+`EncryptedDecimal` and `EncryptedText` in `server/models/encrypted.py`: a
+**SQLAlchemy `TypeDecorator`** per kind of value on the model columns, so model fields keep their
 Python types (`Decimal`, `dict`) for mypy and the upsert needs no change — Core
 `insert(...).on_conflict_do_update` passes bind parameters through the column
 type. Three conditions keep it honest:
@@ -123,34 +132,56 @@ An explicit cipher collaborator called at each write and read site was
 considered and rejected: it turns model fields into `bytes` and every read site
 into a place to forget a decrypt.
 
-A minimal **read repository** — rows by `(user, data_type, civil_date range)`,
-values decrypted — ships with the encryption, so the round trip is proven before
-the read API routes are built on it.
+**An encrypted column cannot be compared in SQL**: each encryption draws a fresh
+nonce, so `WHERE value_unit = 'kg'` encrypts `'kg'` anew and matches nothing.
+Filter on structure columns; compare values in Python.
+
+A minimal **read repository**, `MeasurementRepository` in
+`server/db/measurements.py` — measurements by `(user, data_type, civil_date
+range)` with tombstones left out, and a session's segments — returns decrypted
+values and never loads `raw`. The read API routes build on it.
 
 ## Proving it
 
 - **Unit:** the cipher round-trips; both the compressed and the uncompressed
   path; the version byte is what it says.
-- **Integration, against real Postgres:** upsert known fixtures, then read the
-  raw rows with plain SQL, bypassing the models, and assert no known plaintext
-  appears (`72`, `"beatsPerMinute"`, a stage name inside a payload), that each
-  encrypted column is `bytea`, and that each carries the right compression flag.
-  This is the test that catches a new column someone forgets to encrypt, and the
-  compression path that only a large payload exercises.
+- **Integration, against real Postgres**
+  (`tests/integration/test_encryption_at_rest.py`): write a row to every table
+  that holds health data, read it back with plain SQL that bypasses the models,
+  and assert no known plaintext appears, each encrypted column is `bytea`, and
+  each carries the right header. The test lists **every** column of those tables
+  as either encrypted or structure, so a column added without that decision
+  fails it rather than landing in plaintext.
 
-## Cutover
+## Changing a table's schema
 
 No migrations (see [Alembic](decisions.md#open-decisions)), so a column type
-changes the established way: drop the affected tables and let `create_all()`
-recreate them. `create_all()` only creates what is missing, so `users` — and with
-it the refresh token — survives, and no re-consent is needed.
+changes by dropping the affected tables and letting `create_all()` recreate them.
+`create_all()` only creates what is missing, so `users` — and with it the refresh
+token — survives, and no re-consent is needed.
 
-- A CLI subcommand, **`db reset-measurements --force`**, drops the measurement
-  tables and runs `create_all()`. Its table list comes from the measurement
-  models, so `users` cannot be named. `--include-audit` also drops
-  `raw_notifications`; it is needed this once, because `body` changes type.
-  It will be reused for every schema change until migrations exist.
-- Then `backfill run` from **2026-09-20**, the earliest stored day. Re-backfilling
-  is a separate, explicit command.
-- **`raw_notifications` history is lost** at this cutover. Acceptable during
-  development only; after it, the audit log is not wiped.
+- **`uv run python -m server.cli db reset-measurements --force`** drops the
+  measurement tables and recreates them empty. Its table list is fixed in the
+  command, so `users` cannot be named; without `--force` it only says what it
+  would drop. `--include-audit` also drops `raw_notifications`.
+- Then **`backfill run`** refills them. It cannot refill everything: heart-rate
+  accepts no time filter, so each day's window pages back from *now*, and the
+  50-page cap stops it after roughly a week of heart-rate. Older heart-rate is
+  lost by a reset — which is why the move to encryption did not use one.
+
+## The move to encryption, 2026-11-01
+
+The plaintext tables were rewritten in place rather than reset, because of that
+heart-rate limit. A one-off script, after a `pg_dump`, read every row of the six
+tables, dropped and recreated them, and wrote the rows back through the
+encrypting column types — all in one transaction, since Postgres DDL is
+transactional, and keeping the original ids so segments still found their
+sessions. `users` was not touched. Nothing was lost, `raw_notifications`
+included: 7,596 interval rows, 39,667 heart-rate samples, 2 sleep sessions with
+74 segments, 23 daily summaries and 115 audit rows. A 3-day backfill then
+topped up through the normal path.
+
+Afterwards no heart-rate `raw` contained `beatsPerMinute`, every stored value
+began with the expected header, and every row read back through
+`MeasurementRepository`. The database went from 72 MB to 50 MB, though part of
+that is the bloat a fresh table no longer carries.

@@ -7,8 +7,7 @@ pass ``sa_type=`` and let SQLModel build a fresh column per table. Passing
 ``sa_column=`` there fails with "Column object already assigned to Table".
 """
 
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlmodel import Column, Date, DateTime, Numeric
+from sqlmodel import Column, Date, DateTime
 
 
 def utc_type() -> DateTime:
@@ -34,35 +33,6 @@ def civil_date_type() -> Date:
     index instead of extracting from a timestamp on every read.
     """
     return Date()
-
-
-def jsonb_type() -> JSONB:
-    """``jsonb``, not ``json``.
-
-    SQLModel re-exports generic ``JSON`` only, and ``json`` can carry neither a
-    GIN index nor a value comparison without a cast. This module's import of
-    ``JSONB`` and the one in ``notification.py`` are the only two places the
-    project reaches past SQLModel into SQLAlchemy for a column type.
-
-    ``none_as_null`` is not the default and has to be asked for. Without it
-    SQLAlchemy stores Python ``None`` as the *JSON value* ``null``, which is a
-    real value: it satisfies ``NOT NULL``, so a ``raw`` column declared not-null
-    would silently accept a row with no payload, and "no payload" and "a payload
-    that is null" would be indistinguishable on read. With it, ``None`` means SQL
-    NULL, the constraint bites, and ``value`` records a genuine absence.
-    """
-    return JSONB(none_as_null=True)
-
-
-def quantity_type() -> Numeric:
-    """A scalar measurement, when the payload has one.
-
-    ``Numeric`` rather than float: step counts arrive as int64-in-a-string and
-    masses as decimals, and a binary float cannot hold either exactly. Null
-    whenever the value is composite -- a nutrition log or an ECG waveform has no
-    single number, and those live in ``value`` instead.
-    """
-    return Numeric()
 
 
 def utc_column(*, nullable: bool = True) -> Column:

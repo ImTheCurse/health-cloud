@@ -6,6 +6,10 @@ them: ``ObservationTimeInterval`` for something accumulated over a window,
 ``SessionTimeInterval`` for a window that bundles metrics and sub-intervals.
 There is one table per shape, plus a landing zone for anything unclassifiable
 and a child table for a session's segments.
+
+Every value column is encrypted at rest; the identity and time columns are not,
+so the natural key, the chart index and window queries still work in SQL. See
+``server.models.encrypted``.
 """
 
 from datetime import date, datetime
@@ -14,13 +18,8 @@ from typing import Any
 
 from sqlmodel import Field, Index, SQLModel, UniqueConstraint
 
-from server.models.util import (
-    civil_date_type,
-    civil_type,
-    jsonb_type,
-    quantity_type,
-    utc_type,
-)
+from server.models.encrypted import EncryptedDecimal, EncryptedJSON, EncryptedText
+from server.models.util import civil_date_type, civil_type, utc_type
 
 
 class DataPointBase(SQLModel):
@@ -63,21 +62,23 @@ class DataPointBase(SQLModel):
     civil_date: date | None = Field(default=None, sa_type=civil_date_type())
 
     #: The measurement, when it is a single number. Null for composite payloads.
-    value_numeric: Decimal | None = Field(default=None, sa_type=quantity_type())
+    #: A ``Decimal``, not a float: step counts arrive as int64-in-a-string and
+    #: masses as decimals, and a binary float cannot hold either exactly.
+    value_numeric: Decimal | None = Field(default=None, sa_type=EncryptedDecimal())
     #: The unit that number is in, when Google states one ("kg", "m", "kcal").
-    value_unit: str | None = Field(default=None)
+    value_unit: str | None = Field(default=None, sa_type=EncryptedText())
 
     #: The union field from the dataPoint -- the type-specific payload itself.
     #: Nullable, and stated rather than inferred: ``Any`` reads as non-optional
     #: to SQLModel, and a point whose payload we could not identify should be
     #: recorded as having none rather than as an empty object, which would be a
     #: claim we cannot support.
-    value: Any = Field(default=None, sa_type=jsonb_type(), nullable=True)
+    value: Any = Field(default=None, sa_type=EncryptedJSON(), nullable=True)
 
-    #: The whole dataPoint as received. See the module docstring. Not null on
-    #: purpose -- a row that lost its source payload cannot be re-derived, and
-    #: that is the one thing this column exists to prevent.
-    raw: Any = Field(sa_type=jsonb_type(), nullable=False)
+    #: The whole dataPoint as received. Not null on purpose -- a row that lost
+    #: its source payload cannot be re-derived, and that is the one thing this
+    #: column exists to prevent.
+    raw: Any = Field(sa_type=EncryptedJSON(), nullable=False)
 
     #: Tombstone. ``operation: DELETE`` sets this; reads filter on it being
     #: null. A deletion that rewrote history would make models built on this
@@ -164,8 +165,9 @@ class SessionSegment(SQLModel, table=True):
 
     #: What Google called this particular segment: "LIGHT", "DEEP", "REM",
     #: "AWAKE" for a sleep stage. Not an enum -- the vocabulary differs per data
-    #: type and Google extends it.
-    label: str | None = Field(default=None)
+    #: type and Google extends it. Encrypted: for a sleep stage, the label is the
+    #: measurement.
+    label: str | None = Field(default=None, sa_type=EncryptedText())
 
     start_ts: datetime | None = Field(default=None, sa_type=utc_type())
     end_ts: datetime | None = Field(default=None, sa_type=utc_type())
@@ -173,4 +175,4 @@ class SessionSegment(SQLModel, table=True):
     local_end: datetime | None = Field(default=None, sa_type=civil_type())
 
     #: The segment as received, for anything beyond its type and window.
-    value: Any = Field(default=None, sa_type=jsonb_type(), nullable=True)
+    value: Any = Field(default=None, sa_type=EncryptedJSON(), nullable=True)
