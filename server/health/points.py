@@ -30,6 +30,7 @@ from server.health.util import (
     parse_civil,
     parse_offset,
     parse_timestamp,
+    platform_of,
     scalar_value,
 )
 from server.models.const import SegmentType, TimeStructure
@@ -124,6 +125,7 @@ def build(
         health_user_id=health_user_id,
         data_type=data_type,
         record_id=record_id_of(point),
+        source_platform=platform_of(point),
         value=payload,
         raw=point,
         value_numeric=numeric,
@@ -154,10 +156,14 @@ def record_id_of(point: dict[str, Any]) -> str:
     make a *correction* look like a different record and insert a second row
     alongside the one it was meant to replace, which is precisely the silent
     duplication the tombstone and upsert design exists to avoid.
+
+    Some types do send a ``name`` whose trailing id is empty and identical on
+    every point (``respiratory-rate-sleep-summary``). That is no identity at all,
+    so it is derived the same way.
     """
     name = point.get("name")
-    if isinstance(name, str) and name:
-        return name.rsplit("/", 1)[-1] or name
+    if isinstance(name, str) and (tail := name.rsplit("/", 1)[-1]):
+        return tail
     return _derived_id(point)
 
 

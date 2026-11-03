@@ -207,3 +207,23 @@ def live_daily_summary_point(data_type: str = "daily-resting-heart-rate") -> dic
             "dailyRestingHeartRateMetadata": {},
         },
     }
+
+
+def live_respiratory_summary_point(day: int = 2) -> dict[str, Any]:
+    """A ``respiratory-rate-sleep-summary`` point, as the live API sends it.
+
+    Unlike ``steps``, it carries a ``name`` -- but one whose trailing id segment is
+    **empty**, identical on every point of the type. Read naively, that name would
+    give every night the same record id.
+    """
+    return {
+        "name": f"{USER_PATH}/respiratory-rate-sleep-summary/dataPoints/",
+        "dataSource": {"platform": "FITBIT"},
+        "respiratoryRateSleepSummary": {
+            "sampleTime": {
+                "physicalTime": f"2026-01-{day:02d}T11:00:00Z",
+                "utcOffset": "-14400s",
+            },
+            "fullSleepStats": {"breathsPerMinute": 14.2},
+        },
+    }

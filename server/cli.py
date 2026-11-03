@@ -26,6 +26,7 @@ from sqlmodel import Session, SQLModel, select
 
 from server.config.settings import get_settings
 from server.db.session import get_session, reset_tables
+from server.health.const import LIST_UNSUPPORTED
 from server.health.error import HealthApiError
 from server.models.datapoint import (
     ObservationSampleTime,
@@ -37,7 +38,12 @@ from server.models.datapoint import (
 from server.models.notification import RawNotification
 from server.models.user import User
 from server.providers import build_fetcher, build_user_repository
-from server.webhooks.const import WEBHOOK_PATH, SubscriptionPolicy
+from server.webhooks.const import (
+    DATA_TYPES,
+    SYSTEM_EVENTS,
+    WEBHOOK_PATH,
+    SubscriptionPolicy,
+)
 from server.webhooks.error import SubscriberError
 from server.webhooks.subscriber import SubscriberClient, describe
 
@@ -133,7 +139,7 @@ def db_reset_measurements(args: argparse.Namespace) -> None:
 
     reset_tables(models)
     print(f"dropped and recreated, empty: {names}")
-    print("refill with: backfill run --types ... --days N")
+    print("refill with: backfill run --days N")
 
 
 def backfill_run(args: argparse.Namespace) -> None:
@@ -154,15 +160,16 @@ def backfill_run(args: argparse.Namespace) -> None:
     """
     end = dt.datetime.now(dt.UTC) if args.until is None else _day(args.until)
     start = end - dt.timedelta(days=args.days)
+    types = args.types or backfill_types()
 
     with get_session() as session:
         user = _only_user(args.user, session)
         fetcher = build_fetcher(session)
         print(
             f"backfilling {args.days} day(s) up to {end.date()} "
-            f"for {len(args.types)} type(s), one day at a time"
+            f"for {len(types)} type(s), one day at a time"
         )
-        for data_type in args.types:
+        for data_type in types:
             written = segments = 0
             # Floor rollups are civil-day aggregates. Align their windows to
             # midnight so adjacent backfill days do not fetch the same day twice.
@@ -181,6 +188,21 @@ def backfill_run(args: argparse.Namespace) -> None:
                 segments += result.segments
                 print(f"  {data_type} {day_start.date()}: {result.written} points")
             print(f"  {data_type}: {written} points, {segments} segments in total")
+
+
+def backfill_types() -> tuple[str, ...]:
+    """Every subscribed type there is something to fetch for.
+
+    The account events carry no data, and the types Google serves no ``list``
+    for would only be skipped one by one -- except ``floors``, which has a
+    rollup path of its own.
+    """
+    return tuple(
+        data_type
+        for data_type in DATA_TYPES
+        if data_type not in SYSTEM_EVENTS
+        and (data_type not in LIST_UNSUPPORTED or data_type == "floors")
+    )
 
 
 def _days(
@@ -280,8 +302,8 @@ def build_parser() -> argparse.ArgumentParser:
     running.add_argument(
         "--types",
         nargs="+",
-        required=True,
-        help="data types to fetch, e.g. --types steps sleep heart_rate",
+        help="data types to fetch, e.g. --types steps sleep heart-rate "
+        "(default: every subscribed type that can be fetched)",
     )
     running.add_argument(
         "--days",

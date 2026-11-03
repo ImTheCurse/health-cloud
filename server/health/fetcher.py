@@ -25,7 +25,7 @@ from server.health.credentials import AccessTokens
 from server.health.error import FetchError
 from server.health.points import build
 from server.health.util import parse_civil, parse_timestamp
-from server.models.const import TimeStructure
+from server.models.const import GOOGLE_HEALTH_PLATFORM, TimeStructure
 from server.models.datapoint import DataPointBase, SessionTimeInterval, UnknownDataPoint
 from server.models.user import User
 from server.observability.util import hashed_log_id
@@ -191,6 +191,7 @@ class Fetcher:
                     health_user_id=user.health_user_id,
                     data_type="floors",
                     record_id=record_id,
+                    source_platform=GOOGLE_HEALTH_PLATFORM,
                     civil_date=day,
                     value=value,
                     value_numeric=Decimal(count),

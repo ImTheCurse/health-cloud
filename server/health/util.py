@@ -112,6 +112,15 @@ def _iso_like(value: str) -> bool:
     return True
 
 
+def platform_of(point: dict[str, Any]) -> str | None:
+    """The platform that recorded a dataPoint, from ``dataSource.platform``."""
+    source = point.get("dataSource")
+    if not isinstance(source, dict):
+        return None
+    platform = source.get("platform")
+    return platform if isinstance(platform, str) and platform else None
+
+
 def scalar_value(payload: Any) -> tuple[Decimal | None, str | None]:
     """The single number in a payload, and its unit -- if there is exactly one.
 

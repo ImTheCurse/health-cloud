@@ -24,6 +24,7 @@ from tests.google_data import (
     interval_point,
     live_daily_summary_point,
     live_interval_point,
+    live_respiratory_summary_point,
     sample_point,
     session_point,
     unrecognisable_point,
@@ -252,6 +253,29 @@ def test_a_different_window_is_a_different_record():
     assert record_id_of(live_interval_point(start_hour=9)) != record_id_of(
         live_interval_point(start_hour=11)
     )
+
+
+def test_a_name_with_an_empty_id_is_derived_instead():
+    """Every live ``respiratory-rate-sleep-summary`` point carries the same name,
+    ending in an empty id. Taking that name as the id put every night on one row."""
+    first = live_respiratory_summary_point(day=2)
+    second = live_respiratory_summary_point(day=3)
+
+    assert record_id_of(first).startswith("d-")
+    assert record_id_of(first) != record_id_of(second)
+
+
+def test_the_recording_platform_is_kept_in_plaintext_structure():
+    """Reads filter on it, so it cannot live only inside the encrypted ``raw``."""
+    row, _ = row_for(live_respiratory_summary_point(), "respiratory-rate-sleep-summary")
+
+    assert row.source_platform == "FITBIT"
+
+
+def test_a_point_without_a_platform_has_none():
+    row, _ = row_for(heart_rate_point(), "heart-rate")
+
+    assert row.source_platform is None
 
 
 def test_a_point_with_nothing_to_identify_it_is_refused():

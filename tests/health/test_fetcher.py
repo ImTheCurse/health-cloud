@@ -223,6 +223,7 @@ def test_floors_store_one_daily_total_and_preserve_the_rollup(captured_upserts):
     assert rows[0].value_numeric == 8
     assert rows[0].raw == bucket
     assert rows[0].record_id == "rollup:all-sources:2026-01-02"
+    assert rows[0].source_platform == "GOOGLE_HEALTH"
     assert session.commits == 1
     assert tokens.calls == 1
 
