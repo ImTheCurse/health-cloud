@@ -48,6 +48,14 @@ class SegmentType(StrEnum):
     EXERCISE_EVENT = "EXERCISE_EVENT"
 
 
+#: ``source_platform`` for a Fitbit device's own measurement.
+FITBIT_PLATFORM: Final = "FITBIT"
+
+#: ``source_platform`` for a total Google computed itself across every source --
+#: a ``dailyRollUp`` bucket, which carries no ``dataSource`` of its own.
+GOOGLE_HEALTH_PLATFORM: Final = "GOOGLE_HEALTH"
+
+
 #: Written into ``data_type`` when a pointer or dataPoint names no type. Matches
 #: the subject the receiver publishes such a notification to.
 UNKNOWN_DATA_TYPE: Final = "unknown"

@@ -94,15 +94,21 @@ DATA_TYPES: Final = (
     "height",
     "hydration-log",
     "nutrition-log",
+    "oxygen-saturation",
     "respiratory-rate-sleep-summary",
     "run-vo2-max",
     "sedentary-period",
     "sleep",
     "steps",
     "time-in-heart-rate-zone",
+    "vo2-max",
     "weight",
     "user-deleted",
     "user-revoked-access",
 )
+
+#: The entries in ``DATA_TYPES`` that are account events rather than data: there
+#: is nothing to fetch for them.
+SYSTEM_EVENTS: Final[frozenset[str]] = frozenset({"user-deleted", "user-revoked-access"})
 
 

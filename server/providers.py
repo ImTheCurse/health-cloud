@@ -11,6 +11,7 @@ from functools import lru_cache
 
 from sqlmodel import Session
 
+from server.aggregation.series import MeasurementReader
 from server.auth.const import TOKEN_ISSUER
 from server.auth.cookies import SessionCookies
 from server.auth.google import GoogleOAuthClient
@@ -122,6 +123,11 @@ def build_user_repository(session: Session) -> UserRepository:
 def build_measurement_repository(session: Session) -> MeasurementRepository:
     """Decrypted reads of the measurement tables, bound to one session."""
     return MeasurementRepository(session)
+
+
+def build_measurement_reader(session: Session, health_user_id: str) -> MeasurementReader:
+    """One user's measurements, bound to one session. Not cached: per request."""
+    return MeasurementReader(build_measurement_repository(session), health_user_id)
 
 
 def build_fetcher(session: Session) -> Fetcher:

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from server.api import auth, health, webhooks
+from server.api import auth, data, health, webhooks
 from server.config.logging import configure_logging
 from server.config.settings import get_settings
 from server.db.session import create_all
@@ -51,3 +51,4 @@ app.middleware("http")(log_requests)
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(webhooks.router)
+app.include_router(data.router)

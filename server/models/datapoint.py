@@ -45,6 +45,13 @@ class DataPointBase(SQLModel):
     #: across a correction rather than reissuing it.
     record_id: str
 
+    #: Which platform recorded this point: Google's ``dataSource.platform``
+    #: (``FITBIT``, ``HEALTH_KIT``, ...), or ``GOOGLE_HEALTH`` for a total Google
+    #: computed across sources. Plaintext because reads filter on it: the same
+    #: walk can arrive from a watch and a phone, and summing both counts it twice.
+    #: Not an enum, for the same reason ``data_type`` is not.
+    source_platform: str | None = Field(default=None)
+
     #: The absolute window, UTC. Nullable because a full-day activity omits
     #: ``physicalTimeInterval`` entirely -- for those, the civil columns are the
     #: only usable time.

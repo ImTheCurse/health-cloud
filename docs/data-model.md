@@ -4,7 +4,7 @@ Part of the [health-cloud design context](CONTEXT.md). What is stored, keyed on
 what, and the three rules — idempotency, tombstones, civil time — that keep
 reprocessing safe.
 
-Subscribe to **all 29 data types** with the `AUTOMATIC` subscription policy
+Subscribe to **every data type** — 29, plus the two account events — with the `AUTOMATIC` subscription policy
 (Google creates subscriptions on consent; no per-user bookkeeping). Capture
 wide, model narrow: display decisions come later, but data not subscribed to
 today may be unrecoverable, since subscriptions do not backfill.
@@ -73,13 +73,34 @@ From step 6 every **value** column below — `value_numeric`, `value_unit`,
 plaintext so the key, the index and window queries still work. See
 [Encryption at rest](encryption.md).
 
-`health_user_id`, `data_type`, `record_id`, `start_ts`/`end_ts` (UTC, nullable),
+`health_user_id`, `data_type`, `record_id`, `source_platform`, `start_ts`/`end_ts` (UTC, nullable),
 `local_start`/`local_end` (no timezone), `civil_date`, `value_numeric` +
 `value_unit`, `value` (the type-specific payload), `raw`, `deleted_at`,
 `fetched_at`. A surrogate `id` primary key, with the natural key
 `(health_user_id, data_type, record_id)` as a named unique constraint — the
 `ON CONFLICT` target — and an index on `(health_user_id, data_type, civil_date)`,
 which is the question every daily chart asks.
+
+**`source_platform` is structure, not value.** It is Google's
+`dataSource.platform` — `FITBIT`, `HEALTH_KIT` — or `GOOGLE_HEALTH` for a total
+Google computed across every source (the `floors` daily rollup, which has no
+`dataSource`). The same walk arrives from a watch and from a phone, so steps and
+distance overlap across sources and a sum over all of them counts it twice.
+Reads filter on the platform, so it lives in plaintext beside the other
+structure; it says which device, not what was measured. Until combining sources
+is decided (see [open decisions](decisions.md#open-decisions)), reads use
+`FITBIT` and `GOOGLE_HEALTH` only.
+
+It was added to the existing tables in place on 2026-11-03, not by a reset: a
+reset loses heart-rate older than a week. After a `pg_dump`, a one-off script ran
+`ALTER TABLE … ADD COLUMN` on the four measurement tables and filled the column
+from each row's `raw`, in one transaction. All 174,161 rows got a platform; none
+came out null.
+
+**A `name` is not always an identity.** `respiratory-rate-sleep-summary` points
+carry a `name` whose trailing id is empty and the same on every point, so the
+record id is derived from time and source whenever that segment is empty —
+otherwise every night lands on one row.
 
 **What three tables cannot type is the value.** `steps.count` is an int64 in a
 string, `heartRate.beatsPerMinute` an integer, a weight a quantity object with a

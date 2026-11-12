@@ -71,6 +71,7 @@ MEASUREMENT_PLAINTEXT = {
     "health_user_id",
     "data_type",
     "record_id",
+    "source_platform",
     "start_ts",
     "end_ts",
     "local_start",

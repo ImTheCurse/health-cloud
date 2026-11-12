@@ -48,7 +48,7 @@ Every **value**; none of the **structure**.
 
 | Encrypted | Plaintext |
 | --- | --- |
-| `value_numeric`, `value_unit` — uncompressed | `health_user_id`, `data_type`, `record_id` — the natural key and `ON CONFLICT` target |
+| `value_numeric`, `value_unit` — uncompressed | `health_user_id`, `data_type`, `record_id` — the natural key and `ON CONFLICT` target; `source_platform`, which reads filter on |
 | `value`, `raw` — zlib, then encrypted | `start_ts`/`end_ts`, `local_start`/`local_end`, `civil_date` — the chart index and window queries |
 | `session_segments.label` — uncompressed; for a sleep stage, the label *is* the measurement | `deleted_at`, `fetched_at` |
 | `session_segments.value` — zlib, then encrypted | `session_segments`: `session_id`, `segment_type` and its times |

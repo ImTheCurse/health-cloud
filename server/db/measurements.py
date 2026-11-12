@@ -8,7 +8,7 @@ and ``raw``, the largest, is never loaded at all.
 """
 
 import datetime as dt
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -65,12 +65,14 @@ class MeasurementRepository:
         start: dt.date,
         end: dt.date,
         with_value: bool = False,
+        platforms: Collection[str] | None = None,
     ) -> list[Measurement]:
         """Live measurements of one type whose civil date is in ``[start, end)``.
 
         Tombstoned rows are left out. Ordered by civil date, then start time.
         ``with_value`` also decrypts the type-specific payload, which a chart of
-        a single number does not need.
+        a single number does not need. ``platforms`` keeps only rows recorded by
+        those sources; ``None`` keeps every source.
         """
         columns: list[Any] = [
             col(table.id),
@@ -94,6 +96,8 @@ class MeasurementRepository:
             .where(col(table.deleted_at).is_(None))
             .order_by(col(table.civil_date), col(table.start_ts))
         )
+        if platforms is not None:
+            statement = statement.where(col(table.source_platform).in_(platforms))
         return [Measurement(*row) for row in self._session.execute(statement)]
 
     def segments(self, session_ids: Sequence[int]) -> dict[int, list[Segment]]:

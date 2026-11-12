@@ -146,6 +146,31 @@ class SubscriberClient:
 
         return self.get(subscriber_id) or {}
 
+    def sync_types(
+        self,
+        subscriber_id: str,
+        data_types: tuple[str, ...] = DATA_TYPES,
+        policy: SubscriptionPolicy = SubscriptionPolicy.AUTOMATIC,
+    ) -> dict:
+        """Replace the subscribed data types, leaving the endpoint alone."""
+        operation = self._call(
+            "PATCH",
+            f"{API_ROOT}/{self._parent}/subscribers/{subscriber_id}",
+            params={"updateMask": "subscriberConfigs"},
+            json={
+                "subscriberConfigs": [
+                    {
+                        "dataTypes": list(data_types),
+                        "subscriptionCreatePolicy": policy,
+                    }
+                ]
+            },
+        )
+        if error := operation.get("error"):
+            raise SubscriberError(error.get("message", str(error)))
+
+        return self.get(subscriber_id) or {}
+
     def delete(self, subscriber_id: str, force: bool = False) -> None:
         self._call(
             "DELETE",
