@@ -140,9 +140,13 @@ Progress marker — tick a box only when the step is genuinely complete.
       Nothing was lost, the audit log included. Verified on the real database: no
       plaintext found in any value, and every row read back decrypted. A
       dropped-encryption mutation of one column fails 6 tests. 345 tests.
-- [ ] **7. Read API routes** — FastAPI query routes over the read repository,
+- [x] **7. Read API routes** — FastAPI query routes over the read repository,
       selecting only the columns a chart needs; aggregation in Python, since
       encrypted values cannot be summed in SQL
+      — *done 2026-11-12.* 24 session-protected `/data/*` routes covering heart
+      rate, oxygen saturation, breathing, sleep, activity, exercise, nutrition,
+      hydration and body, reading only `FITBIT` and `GOOGLE_HEALTH` sources.
+      Verified by hand against the real database with a live session. 453 tests.
 - [ ] **8. React dashboard** — steps, sleep, heart rate
 - [ ] **9. Prefect schedule** — daily 7-day `:reconcile` flow + push alerting
       on token expiry

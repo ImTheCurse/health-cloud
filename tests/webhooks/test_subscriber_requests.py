@@ -80,6 +80,21 @@ def test_patch_repoints_with_an_update_mask():
     assert session.calls[0]["json"] == {"endpointUri": new_endpoint}
 
 
+def test_sync_types_replaces_the_subscribed_types_only():
+    """Masked to the configs, so the endpoint and its secret are left alone."""
+    session = FakeSession(*created_subscriber())
+
+    SubscriberClient(PROJECT, session).sync_types(VALID_ID)
+
+    call = session.calls[0]
+    assert call["method"] == "PATCH"
+    assert call["params"] == {"updateMask": "subscriberConfigs"}
+    config = call["json"]["subscriberConfigs"][0]
+    assert config["dataTypes"] == list(DATA_TYPES)
+    assert config["subscriptionCreatePolicy"] == "AUTOMATIC"
+    assert "endpointUri" not in call["json"]
+
+
 def test_delete_passes_force_only_when_asked():
     session = FakeSession(FakeResponse(payload={}))
     SubscriberClient(PROJECT, session).delete(VALID_ID)

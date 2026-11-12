@@ -134,3 +134,17 @@ def test_segments_come_back_per_session_with_their_labels(session):
 
 def test_no_session_ids_reads_nothing(session):
     assert MeasurementRepository(session).segments([]) == {}
+
+
+def test_platforms_keep_only_those_sources(session):
+    upsert_many(
+        session,
+        [
+            heart_rate("watch", dt.date(2026, 9, 20), 70, source_platform="FITBIT"),
+            heart_rate("phone", dt.date(2026, 9, 20), 90, source_platform="HEALTH_KIT"),
+        ],
+    )
+
+    found = read(session, platforms=("FITBIT",))
+
+    assert [m.value_numeric for m in found] == [Decimal(70)]

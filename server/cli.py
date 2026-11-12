@@ -109,6 +109,13 @@ def subscriber_patch(args: argparse.Namespace) -> None:
     print(describe(subscriber))
 
 
+def subscriber_sync_types(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    print(f"subscribing {settings.subscriber_id} to {len(DATA_TYPES)} data types")
+    subscriber = build_client().sync_types(settings.subscriber_id, policy=args.policy)
+    print(describe(subscriber))
+
+
 def subscriber_delete(args: argparse.Namespace) -> None:
     settings = get_settings()
     build_client().delete(settings.subscriber_id, force=args.force)
@@ -275,6 +282,17 @@ def build_parser() -> argparse.ArgumentParser:
     patching = commands.add_parser("patch", help="repoint at a different endpoint")
     patching.add_argument("--endpoint", help="new public https origin")
     patching.set_defaults(handler=subscriber_patch)
+
+    syncing = commands.add_parser(
+        "sync-types", help="subscribe to every data type in DATA_TYPES"
+    )
+    syncing.add_argument(
+        "--policy",
+        type=SubscriptionPolicy,
+        choices=list(SubscriptionPolicy),
+        default=SubscriptionPolicy.AUTOMATIC,
+    )
+    syncing.set_defaults(handler=subscriber_sync_types)
 
     deleting = commands.add_parser("delete", help="remove the registration")
     deleting.add_argument("--force", action="store_true")
