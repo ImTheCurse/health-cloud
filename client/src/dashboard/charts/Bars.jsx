@@ -102,7 +102,7 @@ export default function Bars({
         tickSize: 4,
         tickPadding: 4,
         tickValues: barTicks(rows),
-        format: (key) => barLabel(rowByKey.get(key), rows),
+        format: (key) => barLabel(key, rows),
       }}
       layers={layers}
       onMouseEnter={(bar) => setHovered(bar.indexValue)}
@@ -110,6 +110,7 @@ export default function Bars({
       tooltip={({ id, value, indexValue }) => {
         if (spacers.includes(id)) return null;
         const row = rowByKey.get(indexValue);
+        if (!row) return null;
         const parts = shown.filter((k) => !spacers.includes(k.key) && row[k.key]);
         return (
           <div className="tip">

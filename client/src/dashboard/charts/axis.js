@@ -1,5 +1,6 @@
 // Axis ticks shared by the charts: few enough labels to read, on round times.
 
+import { parseIsoDate } from "../dates.js";
 import { formatDay, formatTime } from "../format.js";
 
 const DAY_MS = 86_400_000;
@@ -30,9 +31,14 @@ export function barTicks(rows, max = 8) {
   return candidates.filter((_, index) => index % step === 0).map((row) => row.key);
 }
 
-/** The label of a bar row: a time within one day, otherwise the date. */
-export function barLabel(row, rows) {
-  return isSingleDay(rows) ? formatTime(row.x) : formatDay(row.x);
+/**
+ * The label of a bar key: a time within one day, otherwise the date. Read from
+ * the key itself, not looked up: right after the range changes, nivo can still
+ * ask for ticks of the previous chart, whose keys are not in the new rows.
+ */
+export function barLabel(key, rows) {
+  const date = key.length > 10 ? new Date(key) : parseIsoDate(key);
+  return isSingleDay(rows) ? formatTime(date) : formatDay(date);
 }
 
 function isSingleDay(rows) {
