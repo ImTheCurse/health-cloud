@@ -31,7 +31,6 @@ export default function Heart({ view }) {
   const variabilityDaily = useData(...routes.variabilityDaily);
 
   // The 30 days before the range, for each chart's personal range.
-  const heartRateBefore = useHistory(ROUTES.heart, view, "heartRate", { bucketed: true });
   const restingBefore = useHistory(ROUTES.heart, view, "resting");
   const variabilityBefore = useHistory(ROUTES.heart, view, "variability", { bucketed: true });
   const variabilityDailyBefore = useHistory(ROUTES.heart, view, "variabilityDaily");
@@ -116,7 +115,6 @@ export default function Heart({ view }) {
         view={view}
         unit=" bpm"
         color={CHART.heartRate}
-        personal={{ history: heartRateBefore, notes: "heartRate" }}
         wide
       />
       {view.resolution === "1h" && (

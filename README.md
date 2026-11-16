@@ -40,8 +40,13 @@ Requires [uv](https://docs.astral.sh/uv/), Docker, and Node.
 cp .env.example .env     # then fill in as later steps need values
 docker compose up -d     # Postgres :5432, NATS :4222, Prefect :4200 (+ its own db)
 uv sync                  # backend dependencies
-uv run uvicorn server.main:app --reload
+uv run uvicorn server.main:app --workers 3
 ```
+
+Run the API with several workers when using the dashboard. Reads decrypt in
+Python, one core at a time, so a single worker busy with a long heart-rate read
+makes every other request, sign-in included, wait behind it. `--reload` is for
+editing server code and cannot be combined with `--workers`.
 
 - `GET /healthz` — liveness, touches nothing
 - `GET /readyz` — readiness, checks Postgres **and** the broker, because the

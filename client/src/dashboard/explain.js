@@ -288,10 +288,6 @@ const good = (text) => ({ tone: "good", text });
 const watch = (text) => ({ tone: "watch", text });
 
 export const PERSONAL = {
-  heartRate: {
-    above: watch("A day running higher than usual often comes with illness starting, stress, poor sleep, heat, caffeine or alcohol."),
-    below: good("A calmer day than usual: often a sign of rest and good recovery."),
-  },
   resting: {
     above: watch("A resting heart rate above your norm often comes before or with illness, and also follows poor sleep, alcohol, dehydration, stress or overtraining."),
     below: good("Lower than usual is usually good: often better fitness or a well-recovered body."),

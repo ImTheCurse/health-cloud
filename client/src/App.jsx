@@ -56,7 +56,7 @@ export default function App() {
         <Panel title="The recorder isn't answering.">
           <p>
             Nothing is listening on localhost:8000. Start it with{" "}
-            <code>uv run uvicorn server.main:app --reload</code>, then reload
+            <code>uv run uvicorn server.main:app --workers 3</code>, then reload
             this page.
           </p>
         </Panel>

@@ -29,9 +29,12 @@ open:
 - A chart asking for data already held gets it immediately.
 - A refresh re-fetches in the background and swaps the new data in; the chart
   never goes back to "Loading…". A failed refresh keeps the data on screen.
-- Everything held refreshes every **5 minutes**, and on the refresh button.
-- After the open tab loads, every other tab's range view is fetched in the
-  background, so switching tabs shows data straight away.
+- Every **5 minutes**, and on the refresh button, what is on screen
+  re-fetches; everything else held is marked stale and re-fetches when next
+  shown.
+- Once every chart on the open tab has its data, the other tabs' range views
+  are fetched in the background, cheapest first, two at a time, so switching
+  tabs usually shows data straight away. The raw-sample routes are skipped.
 - **Memory only.** Nothing is written to `localStorage` or IndexedDB: that would
   leave decrypted health values on disk and undo
   [encryption at rest](encryption.md). A reload starts empty.
@@ -67,8 +70,10 @@ button leaves a day.
 
 - **Range:** 7 / 30 / 90 days, ending today in the browser's local date.
   `end` is sent as tomorrow, because the API excludes it.
-- **Bucket size:** hourly / daily. It changes only the routes that take a
-  `resolution`; the rest are always daily.
+- **Bucket size:** hourly / daily, and hourly only at 7 days; 30 and 90 days
+  are always daily, so a long range never asks for hundreds of thousands of
+  samples. It changes only the routes that take a `resolution`; the rest are
+  always daily. The hour-by-day heatmaps therefore appear at 7 days only.
 - **Default:** 7 days, hourly.
 - **A single day** opens from the date picker, the ‹ › arrows, or by clicking a
   day on any chart. It has its own bucket size: 1 min / 5 / 10 / 30 min / 1 hour,
@@ -208,6 +213,11 @@ Colours live in `client/src/dashboard/theme.js`.
   charts, to show how a day compares with what was expected. Nothing is built
   for it; with nivo it is a series or a custom layer added later. See
   [Decisions](decisions.md#deferred).
+- **Hourly heart-rate summaries** so long ranges stop reading raw samples:
+  the next task, step 8a in [the build order](CONTEXT.md#build-order). Until
+  then, raw heart rate, time in zone, HRV and SpO₂ samples, activity level and
+  zone minutes are never preloaded, and the raw heart-rate chart has no
+  personal range, because each would read hundreds of thousands of rows.
 - **A table view per chart,** for reading exact values without hovering.
 - **Splitting the bundle per tab.** nivo and MUI make the production bundle
   about 1.1 MB (350 KB gzipped). Fine for one self-hosted user; split if it

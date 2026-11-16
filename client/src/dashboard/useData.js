@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 
-import { isRefreshing, keyOf, lastRefreshedAt, load, snapshot, subscribe } from "./dataStore.js";
+import { isRefreshing, keyOf, lastRefreshedAt, load, snapshot, subscribe, watch } from "./dataStore.js";
 
 const LOADING = { status: "loading", data: null, error: null };
 const IDLE = { status: "idle", data: null, error: null };
@@ -28,7 +28,9 @@ export function useData(path, params) {
   const key = params ? keyOf(path, params) : null;
 
   useEffect(() => {
-    if (key) load(path, params);
+    if (!key) return undefined;
+    load(path, params);
+    return watch(key);
     // `key` is `path` and `params` serialised, so it is the whole dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);

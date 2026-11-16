@@ -12,7 +12,7 @@ import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import dayjs from "dayjs";
 import { useCallback, useEffect, useMemo } from "react";
 
-import { load, REFRESH_MS, refreshAll } from "./dataStore.js";
+import { preload, REFRESH_MS, refreshAll } from "./dataStore.js";
 import { addDays, dayRange, parseIsoDate, rangeEndingToday, today } from "./dates.js";
 import { formatFullDay, formatTime } from "./format.js";
 import { GROUPS } from "./groups/index.js";
@@ -24,12 +24,20 @@ const RANGE_LABELS = { 7: "7 days", 30: "30 days", 90: "90 days" };
 const BUCKET_LABELS = { "1h": "Hourly", "1d": "Daily" };
 const RESOLUTION_LABELS = { "1m": "1 min", "5m": "5 min", "10m": "10 min", "30m": "30 min", "1h": "1 hour" };
 
+// Only the 7-day range can be bucketed hourly; 30 and 90 days are daily.
+const HOURLY_RANGES = ["7"];
+
+/** The bucket size a range actually uses: the chosen one where allowed, else daily. */
+function bucketOf(state) {
+  return HOURLY_RANGES.includes(state.range) ? state.bucket : "1d";
+}
+
 function rangeView(group, state, onDay) {
   const days = Number(state.range);
   return {
     mode: "range",
     ...rangeEndingToday(days),
-    resolution: group.bucketed ? state.bucket : "1d",
+    resolution: group.bucketed ? bucketOf(state) : "1d",
     days,
     onDay,
   };
@@ -59,19 +67,14 @@ export default function Dashboard() {
     return () => window.clearInterval(timer);
   }, []);
 
-  // Once the open tab has asked for its data, fetch the other tabs' range view
-  // in the background, so switching tabs shows data straight away.
+  // Other tabs' range views, fetched in the background once the open tab has
+  // finished loading, cheapest first. The store skips the raw-sample routes.
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      for (const other of GROUPS) {
-        const otherView = rangeView(other, state, openDay);
-        for (const [path, params] of Object.values(ROUTES[other.id](otherView))) {
-          if (params) load(path, params);
-        }
-      }
-    }, 800);
-    return () => window.clearTimeout(timer);
-  }, [state, openDay]);
+    const requests = GROUPS.filter((other) => other.id !== group.id).flatMap((other) =>
+      Object.values(ROUTES[other.id](rangeView(other, state, openDay))),
+    );
+    preload(requests);
+  }, [group, state, openDay]);
 
   const { Component } = group;
   const maxDay = dayjs(today());
@@ -145,15 +148,23 @@ export default function Dashboard() {
               <ToggleButtonGroup
                 size="small"
                 exclusive
-                value={state.bucket}
+                value={bucketOf(state)}
                 onChange={(_, bucket) => bucket && update({ bucket })}
                 aria-label="Bucket size"
               >
-                {BUCKETS.map((bucket) => (
-                  <ToggleButton key={bucket} value={bucket}>
-                    {BUCKET_LABELS[bucket]}
-                  </ToggleButton>
-                ))}
+                {BUCKETS.map((bucket) => {
+                  const allowed = bucket === "1d" || HOURLY_RANGES.includes(state.range);
+                  return (
+                    <ToggleButton
+                      key={bucket}
+                      value={bucket}
+                      disabled={!allowed}
+                      title={allowed ? undefined : "Hourly buckets are for the 7-day range only"}
+                    >
+                      {BUCKET_LABELS[bucket]}
+                    </ToggleButton>
+                  );
+                })}
               </ToggleButtonGroup>
             )}
           </>

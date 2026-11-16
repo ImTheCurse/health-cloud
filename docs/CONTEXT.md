@@ -151,6 +151,12 @@ Progress marker — tick a box only when the step is genuinely complete.
       Verified by hand against the real database with a live session. 453 tests.
 - [ ] **8. React dashboard** — every `/data/*` route, grouped by type into
       tabs, over a range or a single day. See [Charting](charting.md)
+- [ ] **8a. Hourly heart-rate summaries** — **next task.** A stored hourly
+      rollup per user (min, mean, max, count, and time in each zone),
+      written by the fetcher flow and the backfill, so 30- and 90-day views
+      read about 720 rows instead of a million decrypted samples. The day view
+      keeps reading raw samples. Needs a grilling round first. See
+      [Charting](charting.md#deferred) and [Decisions](decisions.md#deferred)
 - [ ] **9. Prefect schedule** — daily 7-day `:reconcile` flow + push alerting
       on token expiry
 - [ ] **10. Cutover to cloudflared** — subscriber PATCH to the self-hosted URL
