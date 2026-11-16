@@ -18,7 +18,12 @@ from server.models.datapoint import (
     UnknownDataPoint,
 )
 from server.models.user import User
-from tests.google_data import interval_point, live_daily_summary_point, session_point
+from tests.google_data import (
+    interval_point,
+    live_daily_summary_point,
+    sample_point,
+    session_point,
+)
 from tests.google_webhook import FAKE_HEALTH_USER_ID
 from tests.health.fakes import FakeResponse, FakeTransport, page
 
@@ -515,3 +520,151 @@ def test_a_session_is_still_written_one_at_a_time(captured_upserts):
     )
 
     assert len(segments) == 1
+
+
+# --- backfilling a window in one pass ---
+
+
+def heart_rate_at(moment: str, record_id: str) -> dict:
+    """A heart-rate sample at ``moment``, for walking a pass across days."""
+    point = sample_point(data_type="heart-rate", record_id=record_id)
+    point["heart-rate"]["sampleTime"]["physicalTime"] = moment
+    return point
+
+
+def backfill(fetcher, start=(2026, 1, 1), end=(2026, 1, 4), on_day=None):
+    return fetcher.backfill_window(
+        user=a_user(),
+        data_type="heart-rate",
+        start=dt.datetime(*start, tzinfo=dt.UTC),
+        end=dt.datetime(*end, tzinfo=dt.UTC),
+        on_day=on_day,
+    )
+
+
+def test_a_backfill_commits_each_day_as_the_pass_leaves_it(captured_upserts):
+    """Newest first, across three days and two pages: every day lands, each in
+    its own commit, so a run that dies halfway keeps the days it finished."""
+    rows, _ = captured_upserts
+    transport = FakeTransport(
+        [
+            page(
+                [
+                    heart_rate_at("2026-01-03T20:00:00Z", "c2"),
+                    heart_rate_at("2026-01-03T08:00:00Z", "c1"),
+                    heart_rate_at("2026-01-02T22:00:00Z", "b2"),
+                ],
+                next_token="more",
+            ),
+            page(
+                [
+                    heart_rate_at("2026-01-02T01:00:00Z", "b1"),
+                    heart_rate_at("2026-01-01T12:00:00Z", "a1"),
+                ]
+            ),
+        ]
+    )
+    fetcher, session, _tokens = fetcher_over(transport)
+    days: list[tuple[dt.date, int]] = []
+
+    result = backfill(fetcher, on_day=lambda day, n: days.append((day, n)))
+
+    assert result.written == 5
+    assert [row.record_id for row in rows] == ["c2", "c1", "b2", "b1", "a1"]
+    assert days == [
+        (dt.date(2026, 1, 3), 2),
+        (dt.date(2026, 1, 2), 2),
+        (dt.date(2026, 1, 1), 1),
+    ]
+    assert session.commits == 3
+
+
+def test_a_backfill_makes_one_request_per_page_not_per_day(captured_upserts):
+    """The point of the single pass: day-by-day re-reads every newer page for
+    each older day."""
+    transport = FakeTransport(
+        [
+            page([heart_rate_at("2026-01-03T10:00:00Z", "c")], next_token="p2"),
+            page([heart_rate_at("2026-01-02T10:00:00Z", "b")], next_token="p3"),
+            page([heart_rate_at("2026-01-01T10:00:00Z", "a")]),
+        ]
+    )
+    fetcher, _, _tokens = fetcher_over(transport)
+
+    backfill(fetcher)
+
+    assert len(transport.requests) == 3
+    assert "filter" not in transport.requests[0]["params"]
+
+
+def test_a_backfill_stops_once_a_page_is_older_than_the_window(captured_upserts):
+    rows, _ = captured_upserts
+    transport = FakeTransport(
+        [
+            page([heart_rate_at("2026-01-02T10:00:00Z", "in")], next_token="p2"),
+            page([heart_rate_at("2025-12-30T10:00:00Z", "old")], next_token="p3"),
+            page([heart_rate_at("2025-12-29T10:00:00Z", "older")]),
+        ]
+    )
+    fetcher, _, _tokens = fetcher_over(transport)
+
+    result = backfill(fetcher)
+
+    assert [row.record_id for row in rows] == ["in"]
+    assert result.skipped == 1
+    assert len(transport.requests) == 2
+
+
+def test_a_backfill_asks_for_the_token_before_every_page(captured_upserts):
+    """A 90-day pass of heart-rate runs for over an hour; one token fetched at the
+    start would expire partway through."""
+    transport = FakeTransport(
+        [
+            page([heart_rate_at("2026-01-03T10:00:00Z", "c")], next_token="p2"),
+            page([heart_rate_at("2026-01-02T10:00:00Z", "b")], next_token="p3"),
+            page([heart_rate_at("2026-01-01T10:00:00Z", "a")]),
+        ]
+    )
+    fetcher, _, tokens = fetcher_over(transport)
+
+    backfill(fetcher)
+
+    assert tokens.calls == 3
+
+
+def test_a_backfill_page_limit_grows_with_the_window(captured_upserts):
+    """One day of heart-rate is ~7 pages, so the flat per-interval limit of 50
+    would stop a long pass after about a week."""
+    endless = [
+        page([heart_rate_at("2026-01-03T10:00:00Z", str(n))], next_token=str(n))
+        for n in range(80)
+    ]
+    fetcher, _, _tokens = fetcher_over(FakeTransport(endless))
+
+    # Three days allow 150 pages, so 80 is fine where 50 would have raised.
+    backfill(fetcher)
+
+
+def test_a_backfill_still_refuses_a_runaway_pass(captured_upserts):
+    endless = [
+        page([heart_rate_at("2026-01-01T10:00:00Z", str(n))], next_token=str(n))
+        for n in range(60)
+    ]
+    fetcher, _, _tokens = fetcher_over(FakeTransport(endless))
+
+    with pytest.raises(FetchError):
+        backfill(fetcher, start=(2026, 1, 1), end=(2026, 1, 2))
+
+
+def test_a_backfill_of_an_unreadable_type_does_nothing(captured_upserts):
+    fetcher, _, tokens = fetcher_over(FakeTransport())
+
+    result = fetcher.backfill_window(
+        user=a_user(),
+        data_type="total-calories",
+        start=dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+        end=dt.datetime(2026, 1, 2, tzinfo=dt.UTC),
+    )
+
+    assert result.unsupported
+    assert tokens.calls == 0

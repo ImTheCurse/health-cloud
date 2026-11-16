@@ -65,15 +65,23 @@ class HealthDataClient:
     def list_data_points(
         self,
         *,
-        access_token: str,
+        access_token: str | Callable[[], str],
         data_type: str,
         start: dt.datetime,
         end: dt.datetime,
+        max_pages: int = MAX_PAGES,
     ) -> Iterator[dict[str, Any]]:
         """Every dataPoint of ``data_type`` in ``[start, end)``.
 
         Yields rather than returning a list so a large interval is not held in
         memory in its entirety, and so a caller can commit as it goes.
+
+        Args:
+            access_token: the token, or a callable asked before every page. A
+                read long enough to outlive one token passes the callable, so
+                each page goes out with a credential that is still good.
+            max_pages: where to give up. The default suits one notified
+                interval; a backfill over many days raises it in proportion.
 
         Raises:
             UnsupportedDataTypeError: this type cannot be read with ``list`` at
@@ -91,9 +99,9 @@ class HealthDataClient:
 
         filtered = data_type in FILTER_FIELDS
         page_token: str | None = None
-        for page in range(MAX_PAGES):
+        for page in range(max_pages):
             body = self._page(
-                access_token=access_token,
+                access_token=access_token() if callable(access_token) else access_token,
                 data_type=data_type,
                 start=start,
                 end=end,
@@ -124,7 +132,7 @@ class HealthDataClient:
                 return
 
         raise FetchError(
-            f"{data_type} did not stop paginating after {MAX_PAGES} pages; "
+            f"{data_type} did not stop paginating after {max_pages} pages; "
             "refusing to keep asking"
         )
 
