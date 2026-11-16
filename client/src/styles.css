@@ -338,6 +338,64 @@ code {
   text-align: center;
 }
 
+.card-loading {
+  position: relative;
+  min-height: 120px;
+}
+
+.card-loading-spinner {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.skeleton-chart {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 8px;
+  height: 100%;
+  padding: 26px 16px 30px 0;
+  opacity: 0.55;
+}
+
+.skeleton-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.skeleton-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 100%;
+  border-bottom: 1px solid var(--rule);
+}
+
+.skeleton-rows {
+  display: grid;
+  gap: 10px;
+  padding: 0.5rem 0 1rem;
+  opacity: 0.55;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .MuiSkeleton-root::after {
+    animation: none;
+  }
+}
+
 .card-state.alert {
   color: var(--alert);
 }

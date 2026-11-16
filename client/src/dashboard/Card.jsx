@@ -7,6 +7,7 @@ import IconButton from "@mui/material/IconButton";
 import CloseIcon from "@mui/icons-material/Close";
 import { useState } from "react";
 
+import CardLoading from "./CardLoading.jsx";
 import ChartBoundary from "./ChartBoundary.jsx";
 import { EXPLAIN } from "./explain.js";
 
@@ -42,7 +43,9 @@ export default function Card({
 
   let body = <ChartBoundary resetKeys={states.map((state) => state.data)}>{children}</ChartBoundary>;
   if (failed) body = <p className="card-state alert">Couldn't load this: {failed.error.message}</p>;
-  else if (loading) body = <p className="card-state">Loading…</p>;
+  else if (loading) {
+    body = height === "auto" ? <CardLoading shape="rows" /> : <CardLoading shape="chart" height={height} />;
+  }
   else if (empty) body = <p className="card-state">{emptyText}</p>;
 
   return (
