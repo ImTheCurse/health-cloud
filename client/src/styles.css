@@ -446,6 +446,32 @@ code {
   font-size: 0.75rem;
 }
 
+.tip-note {
+  display: grid;
+  gap: 2px;
+  max-width: 17rem;
+  margin-top: 6px;
+  padding: 6px 8px;
+  white-space: normal;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  border-left: 3px solid var(--tone);
+  background: color-mix(in srgb, var(--tone) 9%, #ffffff);
+}
+
+.tip-note.good {
+  --tone: #2a78d6;
+}
+
+.tip-note.watch {
+  --tone: #e5761f;
+}
+
+.tip .tip-note b {
+  font-family: inherit;
+  color: var(--ink);
+}
+
 .tip-row.current {
   font-weight: 600;
 }

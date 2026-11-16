@@ -2,7 +2,7 @@ import { ROUTES } from "../routes.js";
 import { CHART } from "../theme.js";
 import { useData } from "../useData.js";
 import { Figures, ReadingBandCard, ReadingsCard, StatCard } from "./common.jsx";
-import { latestReading } from "./view.js";
+import { latestReading, useHistory } from "./view.js";
 
 const SPO2_BAND = {
   low: "lower_bound_percent",
@@ -17,6 +17,11 @@ export default function Breathing({ view }) {
   const oxygen = useData(...routes.oxygen);
   const oxygenDaily = useData(...routes.oxygenDaily);
   const breathing = useData(...routes.breathing);
+
+  // The 30 days before the range, for each chart's personal range.
+  const oxygenBefore = useHistory(ROUTES.breathing, view, "oxygen", { bucketed: true });
+  const oxygenDailyBefore = useHistory(ROUTES.breathing, view, "oxygenDaily");
+  const breathingBefore = useHistory(ROUTES.breathing, view, "breathing");
 
   if (view.mode === "day") {
     return (
@@ -57,6 +62,7 @@ export default function Breathing({ view }) {
         unit="%"
         digits={1}
         color={CHART.oxygen}
+        personal={{ history: oxygenBefore, notes: "oxygen" }}
       />
       <ReadingBandCard
         title="Nightly blood oxygen"
@@ -69,6 +75,7 @@ export default function Breathing({ view }) {
         unit="%"
         digits={1}
         color={CHART.oxygenNightly}
+        personal={{ history: oxygenDailyBefore, notes: "oxygenNightly" }}
       />
       <ReadingsCard
         title="Breathing rate"
@@ -78,6 +85,7 @@ export default function Breathing({ view }) {
         view={view}
         fields={BREATHING_FIELDS}
         digits={1}
+        personal={{ history: breathingBefore, notes: "breathing" }}
       />
     </>
   );

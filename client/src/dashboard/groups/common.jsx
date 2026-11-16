@@ -14,6 +14,7 @@ import Lanes from "../charts/Lanes.jsx";
 import { REFERENCE_KEYS } from "../charts/stats.js";
 import TimeLine from "../charts/TimeLine.jsx";
 import { datesBetween } from "../dates.js";
+import { PERSONAL } from "../explain.js";
 import { formatMinutes, formatNumber } from "../format.js";
 import {
   categoryLanes,
@@ -24,20 +25,44 @@ import {
   presentCategories,
   readingBandRows,
   readingSeries,
+  dailyReadingValues,
+  dailyStatValues,
+  personalRanges,
   statRows,
   sumRows,
 } from "../series.js";
+import { PERSONAL_SWATCH } from "../theme.js";
 import { useHidden } from "../useHidden.js";
 import { useBounds } from "./view.js";
 
-/** Legend entries: the series when there are several, then the reference lines. */
-function legendOf(series) {
+/**
+ * Legend entries: the series when there are several, the personal range when
+ * there is one, then the reference lines.
+ */
+function legendOf(series, personal) {
   const entries = series.length > 1 ? series.map((s) => ({ id: s.id, label: s.label, color: s.color, shape: s.shape ?? "line" })) : [];
+  if (personal?.ranges.size) entries.push({ id: "personal", label: "Personal range", color: PERSONAL_SWATCH });
   return [...entries, ...REFERENCE_KEYS];
 }
 
+/**
+ * Your usual range per visible day, from the 30 days of `history` before the
+ * view and the view itself, or null where the chart has none. `values` turns
+ * the payloads into one number per day.
+ */
+function usePersonal(personal, state, view, values) {
+  return useMemo(() => {
+    if (!personal?.history?.data || !state.data || view.mode !== "range") return null;
+    const daily = values([personal.history.data, state.data]);
+    const ranges = personalRanges(daily, datesBetween(view.start, view.end));
+    return { ranges, notes: PERSONAL[personal.notes] };
+    // `values` is chosen by the card and does not change between renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [personal?.history?.data, personal?.notes, state.data, view.mode, view.start, view.end]);
+}
+
 /** The mean of each bucket as a line; the bucket's range shows on hover. */
-export function StatCard({ title, note, explain, state, view, unit = "", digits = 0, bands, color, wide = false }) {
+export function StatCard({ title, note, explain, state, view, unit = "", digits = 0, bands, color, wide = false, personal }) {
   const { from, to } = useBounds(view);
   const [hidden, toggle] = useHidden();
   const rows = useMemo(
@@ -48,6 +73,8 @@ export function StatCard({ title, note, explain, state, view, unit = "", digits 
     () => [{ id: "avg-line", label: title, color, points: rows.map((row) => ({ x: row.x, y: row.mid })) }],
     [rows, color, title],
   );
+  const daily = view.resolution === "1d";
+  const ranges = usePersonal(daily ? personal : null, state, view, dailyStatValues);
   const byTime = useMemo(() => new Map(rows.map((row) => [row.x.getTime(), row])), [rows]);
   const tipExtra = (x) => {
     const row = byTime.get(x.getTime());
@@ -62,7 +89,7 @@ export function StatCard({ title, note, explain, state, view, unit = "", digits 
       explain={explain}
       states={[state]}
       empty={!hasBuckets(state.data)}
-      legend={legendOf(series)}
+      legend={legendOf(series, ranges)}
       hidden={hidden}
       onToggle={toggle}
       wide={wide}
@@ -77,6 +104,7 @@ export function StatCard({ title, note, explain, state, view, unit = "", digits 
         digits={digits}
         daily={view.resolution === "1d"}
         tipExtra={tipExtra}
+        personal={ranges}
         onDay={view.mode === "range" ? view.onDay : undefined}
       />
     </Card>
@@ -246,7 +274,7 @@ export function CategoryCard({ title, note, explain, state, view, order, labels,
 }
 
 /** Daily readings, one line per field. All fields must share a unit. */
-export function ReadingsCard({ title, note, explain, state, view, fields, unit = "", digits = 0, scale = 1 }) {
+export function ReadingsCard({ title, note, explain, state, view, fields, unit = "", digits = 0, scale = 1, personal }) {
   const { from, to } = useBounds(view);
   const [hidden, toggle] = useHidden();
   const series = useMemo(
@@ -258,6 +286,11 @@ export function ReadingsCard({ title, note, explain, state, view, fields, unit =
     [state.data, fields, scale],
   );
   const empty = !hasReadings(state.data) || series.every((line) => line.points.length === 0);
+  const ranges = usePersonal(personal, state, view, (payloads) =>
+    new Map(
+      [...dailyReadingValues(payloads, fields[0].field).entries()].map(([day, value]) => [day, value * scale]),
+    ),
+  );
   return (
     <Card
       title={title}
@@ -265,7 +298,7 @@ export function ReadingsCard({ title, note, explain, state, view, fields, unit =
       explain={explain}
       states={[state]}
       empty={empty}
-      legend={legendOf(series)}
+      legend={legendOf(series, ranges)}
       hidden={hidden}
       onToggle={toggle}
     >
@@ -277,6 +310,7 @@ export function ReadingsCard({ title, note, explain, state, view, fields, unit =
         unit={unit}
         digits={digits}
         daily
+        personal={ranges}
         onDay={view.mode === "range" ? view.onDay : undefined}
       />
     </Card>
@@ -284,7 +318,7 @@ export function ReadingsCard({ title, note, explain, state, view, fields, unit =
 }
 
 /** Daily readings of a middle value, with the bounds shown on hover. */
-export function ReadingBandCard({ title, note, explain, state, view, fields, labels, unit = "", digits = 0, color }) {
+export function ReadingBandCard({ title, note, explain, state, view, fields, labels, unit = "", digits = 0, color, personal }) {
   const { from, to } = useBounds(view);
   const [hidden, toggle] = useHidden();
   const rows = useMemo(
@@ -295,6 +329,7 @@ export function ReadingBandCard({ title, note, explain, state, view, fields, lab
     () => [{ id: "mid", label: labels.mid, color, points: rows.map((r) => ({ x: r.x, y: r.mid })) }],
     [rows, labels.mid, color],
   );
+  const ranges = usePersonal(personal, state, view, (payloads) => dailyReadingValues(payloads, fields.mid));
   const byTime = useMemo(() => new Map(rows.map((row) => [row.x.getTime(), row])), [rows]);
   const tipExtra = (x) => {
     const row = byTime.get(x.getTime());
@@ -309,7 +344,7 @@ export function ReadingBandCard({ title, note, explain, state, view, fields, lab
       explain={explain}
       states={[state]}
       empty={!hasReadings(state.data)}
-      legend={legendOf(series)}
+      legend={legendOf(series, ranges)}
       hidden={hidden}
       onToggle={toggle}
     >
@@ -322,6 +357,7 @@ export function ReadingBandCard({ title, note, explain, state, view, fields, lab
         digits={digits}
         daily
         tipExtra={tipExtra}
+        personal={ranges}
         onDay={view.mode === "range" ? view.onDay : undefined}
       />
     </Card>

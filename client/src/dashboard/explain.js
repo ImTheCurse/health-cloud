@@ -280,3 +280,44 @@ export const EXPLAIN = {
     ],
   },
 };
+
+// What a day outside your personal range usually means, per chart, and whether
+// that side is the good one or the one to watch. Shown when hovering a marked
+// point. "Often" and "can", never a diagnosis.
+const good = (text) => ({ tone: "good", text });
+const watch = (text) => ({ tone: "watch", text });
+
+export const PERSONAL = {
+  heartRate: {
+    above: watch("A day running higher than usual often comes with illness starting, stress, poor sleep, heat, caffeine or alcohol."),
+    below: good("A calmer day than usual: often a sign of rest and good recovery."),
+  },
+  resting: {
+    above: watch("A resting heart rate above your norm often comes before or with illness, and also follows poor sleep, alcohol, dehydration, stress or overtraining."),
+    below: good("Lower than usual is usually good: often better fitness or a well-recovered body."),
+  },
+  variability: {
+    above: good("Higher HRV than usual is usually a sign of good recovery and low stress."),
+    below: watch("Lower HRV than usual often means incomplete recovery: hard training, poor sleep, alcohol, stress or illness."),
+  },
+  nightlyHrv: {
+    above: good("A night with higher HRV than usual: usually good recovery and a relaxed nervous system."),
+    below: watch("A night with lower HRV than usual often follows hard training, alcohol, a late meal, stress or illness starting."),
+  },
+  nonRemHeartRate: {
+    above: watch("A higher sleeping heart rate than usual often follows alcohol, a late meal, a warm room, stress or illness."),
+    below: good("A lower sleeping heart rate than usual: usually a restful, well-recovered night."),
+  },
+  oxygen: {
+    above: good("Higher oxygen saturation than usual: nothing to watch."),
+    below: watch("Lower than usual can come with disturbed breathing in sleep, a cold or chest infection, altitude, or a poor sensor fit."),
+  },
+  oxygenNightly: {
+    above: good("A night with higher oxygen saturation than usual: nothing to watch."),
+    below: watch("A night lower than usual can mean disturbed breathing in sleep, a cold or chest infection, altitude, or a loose watch."),
+  },
+  breathing: {
+    above: watch("Breathing faster than usual in sleep is one of the earliest signs of illness, and also follows hard exercise, alcohol or a warm room."),
+    below: good("Slower than usual is usually fine: often a deeper, calmer night."),
+  },
+};

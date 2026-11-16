@@ -1,9 +1,9 @@
 import { ResponsiveLine } from "@nivo/line";
 import { useMemo } from "react";
 
-import { isoDate } from "../dates.js";
+import { addDays, isoDate, parseIsoDate } from "../dates.js";
 import { formatDay, formatDayTime, formatNumber } from "../format.js";
-import { HOVER, INK_SOFT, nivoTheme, REFERENCE, RULE } from "../theme.js";
+import { HOVER, INK_SOFT, nivoTheme, PERSONAL_BAND, PERSONAL_TONE, REFERENCE, RULE } from "../theme.js";
 import { timeAxis } from "./axis.js";
 import { ExtremeMark, ReferenceLines } from "./Reference.jsx";
 import { summarize } from "./stats.js";
@@ -18,6 +18,9 @@ const MARGIN = { top: 26, right: 16, bottom: 30, left: 48 };
  * - `hidden`: ids switched off in the legend, series and reference lines alike.
  * - `bands`: `[{ from, to, label, color }]` in value units, such as heart-rate zones.
  * - `stepColors`: per-level colours; draws a step line coloured by level, as sleep stages.
+ * - `personal`: `{ ranges: Map<iso, { low, high }>, notes: { above, below } }`, your
+ *   usual range per day; drawn as a band, with each point outside it ringed and
+ *   its meaning in the tooltip. Switched off with the legend id "personal".
  * - `onDay(iso)`: called with the date clicked.
  */
 export default function TimeLine({
@@ -37,6 +40,7 @@ export default function TimeLine({
   daily = false,
   references = true,
   tipExtra,
+  personal,
   onDay,
 }) {
   const visible = useMemo(() => series.filter((line) => !hidden?.has(line.id)), [series, hidden]);
@@ -63,19 +67,48 @@ export default function TimeLine({
     };
   }, [stats, primary]);
 
+  const ranges = personal && !hidden?.has("personal") ? personal.ranges : null;
+  const outside = useMemo(() => {
+    const found = new Map();
+    if (!ranges || !primary) return found;
+    for (const point of primary.points) {
+      if (point.y === null || point.y === undefined) continue;
+      const day = isoDate(point.x);
+      const range = ranges.get(day);
+      if (!range) continue;
+      const side = point.y > range.high ? "above" : point.y < range.low ? "below" : null;
+      if (side) found.set(day, { point, side, range, note: personal.notes[side] });
+    }
+    return found;
+  }, [ranges, primary, personal]);
+
+  // The band must fit on the chart even where it runs past the data.
+  const [scaleMin, scaleMax] = useMemo(() => {
+    if (!ranges || !primary || yMin !== "auto" || yMax !== "auto") return [yMin, yMax];
+    const values = visible.flatMap((line) => line.points.map((p) => p.y)).filter((y) => typeof y === "number");
+    for (const range of ranges.values()) values.push(range.low, range.high);
+    if (!values.length) return [yMin, yMax];
+    const low = Math.min(...values);
+    const high = Math.max(...values);
+    const pad = (high - low || 1) * 0.06;
+    return [low - pad, high + pad];
+  }, [ranges, primary, visible, yMin, yMax]);
+
   const pointCount = Math.max(0, ...visible.map((line) => line.points.length));
   const pointSize = pointCount <= 40 && !stepColors ? 7 : 0;
 
   const layers = useMemo(() => {
     const below = [HoverColumn];
+    if (ranges?.size) below.push(PersonalBand(ranges));
     if (bands?.length) below.push(ReferenceBands(bands));
     const lines = stepColors ? [StepLine(stepColors)] : ["lines"];
     const above = [];
     if (stats) above.push(Overlay(stats, extremes, hidden, formatShort, unit));
+    if (outside.size) above.push(PersonalMarks(outside));
     return ["grid", ...below, "axes", ...lines, "points", ...above, "slices", "crosshair"];
     // formatShort only reads `digits`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bands, stepColors, stats, extremes, hidden, primary, digits, unit]);
+  }, [bands, stepColors, stats, extremes, hidden, primary, digits, unit, ranges, outside]);
 
   const axis = timeAxis(from, to);
 
@@ -86,7 +119,7 @@ export default function TimeLine({
       margin={MARGIN}
       colors={(line) => line.color}
       xScale={{ type: "time", format: "native", precision: "minute", min: from, max: to }}
-      yScale={{ type: "linear", min: yMin, max: yMax }}
+      yScale={{ type: "linear", min: scaleMin, max: scaleMax }}
       curve={curve}
       lineWidth={2.25}
       pointSize={pointSize}
@@ -116,6 +149,15 @@ export default function TimeLine({
               </div>
             ))}
             {tipExtra?.(x) && <div className="tip-row muted">{tipExtra(x)}</div>}
+            {ranges && (
+              <PersonalNote
+                day={isoDate(x)}
+                ranges={ranges}
+                outside={outside}
+                format={formatValue}
+                subject={visible.length > 1 ? primary.label : null}
+              />
+            )}
           </div>
         );
       }}
@@ -234,4 +276,78 @@ function ReferenceBands(bands) {
       </g>
     );
   };
+}
+
+/** Your usual range as a light green band, one step per day. */
+function PersonalBand(ranges) {
+  return function Band({ xScale, yScale, innerWidth, innerHeight }) {
+    return (
+      <g pointerEvents="none">
+        {[...ranges.entries()].map(([day, range]) => {
+          const centre = xScale(parseIsoDate(day));
+          const width = xScale(parseIsoDate(addDays(day, 1))) - centre;
+          const left = Math.max(0, centre - width / 2);
+          const right = Math.min(innerWidth, centre + width / 2);
+          const top = Math.max(0, yScale(range.high));
+          const bottom = Math.min(innerHeight, yScale(range.low));
+          if (right <= left || bottom <= top) return null;
+          return (
+            <rect key={day} x={left} y={top} width={right - left} height={bottom - top} fill={PERSONAL_BAND} />
+          );
+        })}
+      </g>
+    );
+  };
+}
+
+/** A ring and an arrow on each point outside your range: blue good, orange watch. */
+function PersonalMarks(outside) {
+  return function Marks({ xScale, yScale }) {
+    return (
+      <g pointerEvents="none">
+        {[...outside.entries()].map(([day, { point, side, note }]) => {
+          const x = xScale(point.x);
+          const y = yScale(point.y);
+          const color = PERSONAL_TONE[note.tone];
+          const arrowY = side === "above" ? y - 13 : y + 13;
+          return (
+            <g key={day}>
+              <circle cx={x} cy={y} r={7} fill="none" stroke={color} strokeWidth={2.5} />
+              <path
+                d={
+                  side === "above"
+                    ? `M${x - 4},${arrowY + 3} L${x},${arrowY - 3} L${x + 4},${arrowY + 3}`
+                    : `M${x - 4},${arrowY - 3} L${x},${arrowY + 3} L${x + 4},${arrowY - 3}`
+                }
+                fill="none"
+                stroke={color}
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </g>
+          );
+        })}
+      </g>
+    );
+  };
+}
+
+/** The personal-range line of a tooltip: inside it, or what being outside means. */
+function PersonalNote({ day, ranges, outside, format, subject }) {
+  const range = ranges.get(day);
+  if (!range) return null;
+  const span = `${format(range.low)}–${format(range.high)}`;
+  const hit = outside.get(day);
+  const sentence = (text) => (subject ? `${subject} ${text}` : text.charAt(0).toUpperCase() + text.slice(1));
+  if (!hit) return <div className="tip-row muted">{sentence(`within your usual range (${span})`)}</div>;
+  return (
+    <div className={`tip-note ${hit.note.tone}`}>
+      <b>
+        {hit.side === "above" ? "↑ " : "↓ "}
+        {sentence(`${hit.side} your usual range (${span})`)}
+      </b>
+      <span>{hit.note.text}</span>
+    </div>
+  );
 }

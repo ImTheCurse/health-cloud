@@ -5,7 +5,7 @@ import { ROUTES } from "../routes.js";
 import { CHART, ZONE } from "../theme.js";
 import { useData } from "../useData.js";
 import { CategoryCard, Figures, HeatmapCard, ReadingsCard, StatCard } from "./common.jsx";
-import { latestReading } from "./view.js";
+import { latestReading, useHistory } from "./view.js";
 
 const ZONE_ORDER = ["LIGHT", "MODERATE", "VIGOROUS", "PEAK"];
 const ZONE_LABELS = { LIGHT: "Light", MODERATE: "Moderate", VIGOROUS: "Vigorous", PEAK: "Peak" };
@@ -29,6 +29,12 @@ export default function Heart({ view }) {
   const timeInZone = useData(...routes.timeInZone);
   const variability = useData(...routes.variability);
   const variabilityDaily = useData(...routes.variabilityDaily);
+
+  // The 30 days before the range, for each chart's personal range.
+  const heartRateBefore = useHistory(ROUTES.heart, view, "heartRate", { bucketed: true });
+  const restingBefore = useHistory(ROUTES.heart, view, "resting");
+  const variabilityBefore = useHistory(ROUTES.heart, view, "variability", { bucketed: true });
+  const variabilityDailyBefore = useHistory(ROUTES.heart, view, "variabilityDaily");
 
   const zoneLimits = useMemo(() => zones.data?.days?.at(-1)?.zones ?? [], [zones.data]);
   const zoneBands = useMemo(
@@ -64,6 +70,7 @@ export default function Heart({ view }) {
       unit=" ms"
       digits={1}
       color={CHART.variability}
+      personal={{ history: variabilityBefore, notes: "variability" }}
     />
   );
 
@@ -102,7 +109,16 @@ export default function Heart({ view }) {
 
   return (
     <>
-      <StatCard title="Heart rate" explain="heartRate" state={heartRate} view={view} unit=" bpm" color={CHART.heartRate} wide />
+      <StatCard
+        title="Heart rate"
+        explain="heartRate"
+        state={heartRate}
+        view={view}
+        unit=" bpm"
+        color={CHART.heartRate}
+        personal={{ history: heartRateBefore, notes: "heartRate" }}
+        wide
+      />
       {view.resolution === "1h" && (
         <HeatmapCard
           title="Heart rate by hour"
@@ -121,6 +137,7 @@ export default function Heart({ view }) {
         view={view}
         fields={RESTING_FIELDS}
         unit=" bpm"
+        personal={{ history: restingBefore, notes: "resting" }}
       />
       {zoneCard}
       {variabilityCard}
@@ -133,6 +150,7 @@ export default function Heart({ view }) {
         fields={HRV_FIELDS}
         unit=" ms"
         digits={1}
+        personal={{ history: variabilityDailyBefore, notes: "nightlyHrv" }}
       />
       <ReadingsCard
         title="Non-REM heart rate"
@@ -141,6 +159,7 @@ export default function Heart({ view }) {
         view={view}
         fields={NON_REM_FIELDS}
         unit=" bpm"
+        personal={{ history: variabilityDailyBefore, notes: "nonRemHeartRate" }}
       />
       <ReadingsCard title="HRV entropy" explain="entropy" state={variabilityDaily} view={view} fields={ENTROPY_FIELDS} digits={2} />
       <Figures

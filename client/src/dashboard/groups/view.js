@@ -3,9 +3,10 @@
 
 import { useMemo } from "react";
 
-import { parseIsoDate } from "../dates.js";
+import { addDays, parseIsoDate } from "../dates.js";
 import { humanize } from "../format.js";
-import { exerciseTypesByCount } from "../series.js";
+import { exerciseTypesByCount, PERSONAL_WINDOW_DAYS } from "../series.js";
+import { useData } from "../useData.js";
 import { OTHER, SERIES } from "../theme.js";
 
 export function useBounds(view) {
@@ -42,4 +43,19 @@ export function latestReading(readings, field) {
     if (value !== undefined && value !== null) return value;
   }
   return null;
+}
+
+/**
+ * The 30 days before the visible range, for one route, so even the first
+ * visible day has a full personal-range window. Fetched only over a range of
+ * days, and for a bucketed route only at daily buckets: a daily range says
+ * nothing about an hour.
+ */
+export function useHistory(routesOf, view, name, { bucketed = false } = {}) {
+  const enabled = view.mode === "range" && (!bucketed || view.resolution === "1d");
+  const history = enabled
+    ? { ...view, start: addDays(view.start, -PERSONAL_WINDOW_DAYS), end: view.start }
+    : view;
+  const [path, params] = routesOf(history)[name];
+  return useData(path, enabled ? params : null);
 }

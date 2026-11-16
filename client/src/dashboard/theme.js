@@ -76,6 +76,12 @@ export const REFERENCE = {
   min: "#0f8b8d",
 };
 
+// Your personal range: a light green band, and the ring on a day outside it,
+// blue on the good side and orange on the side to watch.
+export const PERSONAL_BAND = "rgba(47, 143, 47, 0.14)";
+export const PERSONAL_SWATCH = "#9ccf9c";
+export const PERSONAL_TONE = { good: "#2a78d6", watch: "#e5761f" };
+
 export const FELL_ASLEEP = "#6250d6";
 export const WOKE_UP = "#e0a100";
 

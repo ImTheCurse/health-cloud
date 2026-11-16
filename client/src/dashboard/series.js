@@ -411,3 +411,65 @@ export function categoryLanes(series, categories, resolution) {
 export function allEmpty(rows, keys) {
   return rows.every((row) => keys.every((key) => !row[key]));
 }
+
+// --- personal range ----------------------------------------------------------
+
+export const PERSONAL_WINDOW_DAYS = 30;
+const PERSONAL_MIN_DAYS = 14;
+const PERSONAL_LOW = 0.1;
+const PERSONAL_HIGH = 0.9;
+
+/** The `q` quantile of sorted numbers, interpolating between neighbours. */
+function quantile(sorted, q) {
+  const position = (sorted.length - 1) * q;
+  const below = Math.floor(position);
+  const above = Math.ceil(position);
+  return sorted[below] + (sorted[above] - sorted[below]) * (position - below);
+}
+
+/**
+ * Your usual range for each of `days`: the 10th to 90th percentile of the 30
+ * days before it, not counting the day itself. A day with fewer than 14 days of
+ * history before it gets no range, rather than one drawn from too little.
+ *
+ * `values` maps an ISO date to that day's value, history included.
+ */
+export function personalRanges(values, days) {
+  const ranges = new Map();
+  for (const day of days) {
+    const window = [];
+    for (let back = 1; back <= PERSONAL_WINDOW_DAYS; back += 1) {
+      const value = values.get(addDays(day, -back));
+      if (typeof value === "number" && !Number.isNaN(value)) window.push(value);
+    }
+    if (window.length < PERSONAL_MIN_DAYS) continue;
+    window.sort((a, b) => a - b);
+    ranges.set(day, { low: quantile(window, PERSONAL_LOW), high: quantile(window, PERSONAL_HIGH) });
+  }
+  return ranges;
+}
+
+/** One value per day from Readings payloads: the day's mean of `field`. */
+export function dailyReadingValues(payloads, field) {
+  const sums = new Map();
+  for (const payload of payloads) {
+    for (const reading of payload?.readings ?? []) {
+      const value = reading.values[field];
+      if (value === undefined || value === null) continue;
+      const entry = sums.get(reading.date) ?? { sum: 0, count: 0 };
+      entry.sum += value;
+      entry.count += 1;
+      sums.set(reading.date, entry);
+    }
+  }
+  return new Map([...sums.entries()].map(([day, { sum, count }]) => [day, sum / count]));
+}
+
+/** One value per day from daily StatSeries payloads: each day's mean. */
+export function dailyStatValues(payloads) {
+  const values = new Map();
+  for (const payload of payloads) {
+    for (const bucket of payload?.buckets ?? []) values.set(bucket.start.slice(0, 10), bucket.avg);
+  }
+  return values;
+}
