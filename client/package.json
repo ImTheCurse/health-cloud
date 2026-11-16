@@ -10,6 +10,19 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^9.5.0",
+    "@mui/material": "^9.5.0",
+    "@mui/x-date-pickers": "^9.18.0",
+    "@nivo/bar": "^0.99.0",
+    "@nivo/calendar": "^0.99.0",
+    "@nivo/core": "^0.99.0",
+    "@nivo/heatmap": "^0.99.0",
+    "@nivo/line": "^0.99.0",
+    "@nivo/scatterplot": "^0.99.0",
+    "@nivo/swarmplot": "^0.99.0",
+    "dayjs": "^1.11.23",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

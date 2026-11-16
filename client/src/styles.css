@@ -6,6 +6,7 @@
   --rule: #c4cfd4;
   --signal: #b4690e;
   --alert: #8c2f1e;
+  --card: #f4f7f8;
 
   --measure: 58ch;
 }
@@ -189,6 +190,423 @@ code {
 .action:focus-visible {
   outline: 2px solid var(--signal);
   outline-offset: 2px;
+}
+
+/* --- dashboard ------------------------------------------------------------ */
+
+.page.wide {
+  max-width: 1240px;
+  padding-top: 1.5rem;
+}
+
+.account {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.25rem 1.25rem;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+
+.account-who {
+  color: var(--ink);
+}
+
+.account .figure {
+  font-size: 1em;
+}
+
+.link {
+  font: inherit;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  padding: 0;
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.link:hover {
+  text-decoration-color: var(--signal);
+}
+
+.tabs {
+  margin-top: 1.25rem;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 1rem 0;
+}
+
+.day-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.day-picker {
+  width: 11.5rem;
+}
+
+.refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-left: auto;
+}
+
+.spinning {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.day-title {
+  font-family: Newsreader, Georgia, serif;
+  font-size: 1.5rem;
+  font-weight: 400;
+}
+
+.hint {
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr));
+  gap: 1rem;
+}
+
+.card {
+  margin: 0;
+  min-width: 0;
+  padding: 1rem 1rem 0.75rem;
+  background: var(--card);
+  border: 1px solid var(--rule);
+}
+
+.card.wide {
+  grid-column: 1 / -1;
+}
+
+.card figcaption {
+  margin-bottom: 0.5rem;
+}
+
+.card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.card h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.card-note {
+  margin: 0.15rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.card-body {
+  position: relative;
+  min-width: 0;
+}
+
+.card-state {
+  margin: 0;
+  padding: 2rem 0;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.card-state.alert {
+  color: var(--alert);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font: inherit;
+  color: inherit;
+  padding: 2px 4px;
+  margin: -2px -4px;
+}
+
+.legend-item:not(.static):hover {
+  color: var(--ink);
+}
+
+.legend-item.off {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.legend-item.Mui-focusVisible {
+  outline: 2px solid var(--signal);
+}
+
+.swatch {
+  display: inline-block;
+  flex: none;
+  background: var(--swatch);
+}
+
+.swatch.block {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.swatch.line {
+  width: 14px;
+  height: 2px;
+}
+
+.swatch.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.swatch.dash {
+  width: 16px;
+  height: 0;
+  border-top: 2px dashed var(--swatch);
+  background: none;
+}
+
+.tip strong {
+  display: block;
+  margin-bottom: 0.15rem;
+  font-weight: 600;
+}
+
+.tip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.tip-row.muted {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+}
+
+.tip-row.current {
+  font-weight: 600;
+}
+
+.tip b {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-weight: 600;
+}
+
+.subtabs {
+  min-height: 34px;
+  margin: 0.5rem 0 0.25rem;
+  border-bottom: 0;
+}
+
+.subtabs .MuiTab-root {
+  min-height: 34px;
+  padding: 4px 10px;
+  font-size: 0.8125rem;
+}
+
+.subtab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.subtab-total {
+  color: var(--ink-soft);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+
+.lanes {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.5rem 0 0.25rem;
+}
+
+.lane {
+  display: grid;
+  grid-template-columns: 12rem 1fr;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.lane-label {
+  display: inline-flex;
+  white-space: nowrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+}
+
+.lane-total {
+  margin-left: auto;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+
+.lane-track {
+  position: relative;
+  height: 26px;
+  background: var(--paper-sunk);
+}
+
+.lane-span {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.lane-span:hover,
+.lane-span:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+  z-index: 1;
+}
+
+.lane-axis {
+  position: relative;
+  height: 1.25rem;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+}
+
+.lane-axis span {
+  position: absolute;
+  top: 0.15rem;
+  transform: translateX(-50%);
+}
+
+.lane-axis span:first-child {
+  transform: none;
+}
+
+.lane-axis span:last-child {
+  transform: translateX(-100%);
+}
+
+.explain h3 {
+  margin: 1rem 0 0.25rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.explain p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.explain-disclaimer {
+  margin-top: 1.25rem !important;
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 560px) {
+  .lane {
+    grid-template-columns: 6.5rem 1fr;
+  }
+
+  .refresh {
+    margin-left: 0;
+  }
+}
+
+.figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 2rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.figures dt {
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+}
+
+.figures dd {
+  margin: 0;
+}
+
+.figure-unit {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.sessions {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.sessions th {
+  color: var(--ink-soft);
+  font-weight: 500;
+  text-align: left;
+  padding: 0.35rem 0.75rem 0.35rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.sessions td {
+  padding: 0.4rem 0.75rem 0.4rem 0;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+
+.sessions .num {
+  text-align: right;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+.sessions th.num {
+  font-family: inherit;
 }
 
 @media (prefers-reduced-motion: reduce) {

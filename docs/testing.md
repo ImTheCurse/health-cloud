@@ -10,7 +10,12 @@ refuses to talk to the service at all:
 1. Signature verification (using a locally generated test keyset)
 2. The 200/401 verification handshake
 
-Plus replayed notification fixtures and idempotent-upsert tests. These land
+Plus replayed notification fixtures and idempotent-upsert tests.
+
+**The client has no tests yet, by choice.** The dashboard was checked by hand in
+a browser against real data. Add Vitest for the pure reshaping in
+`client/src/dashboard/series.js` first when it is worth it: the half-open date
+ranges and the bucket merging are where its bugs would be. These land
 **before** a real subscriber is registered — a handshake bug is miserable to
 debug live.
 

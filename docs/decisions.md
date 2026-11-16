@@ -14,7 +14,7 @@ user, rather than assuming.
 | --- | --- | --- |
 | ~~Token encryption library~~ | ~~Step 2~~ | **Settled: not Tink.** `cryptography` AES-256-GCM (`TOKEN_ENCRYPTION_KEY`) and PyJWT HS256 (`SESSION_SECRET`), both plain `openssl rand -hex 32` values. Tink is reserved for verifying Google's published webhook keyset, which needs no secret key material |
 | Push alert service | Step 9 | ntfy vs Gotify — likely whichever is already running on the self-hosted box |
-| How `client/` is served in production | Step 8 / 10 | Tooling settled at step 1: **Vite + React (JavaScript)**. Still open: static build served from the same host as the API, sharing a registrable domain for cookie auth |
+| How `client/` is served in production | Step 10 | Tooling settled at step 1: **Vite + React (JavaScript)**. Still open: static build served from the same host as the API, sharing a registrable domain for cookie auth |
 | ~~Role of `google-credentials.json`~~ | ~~Step 2~~ | **Settled: none.** Client ID/secret live in `.env`; the file is kept but unused |
 | ~~Logging~~ | ~~Step 3~~ | **Settled: loguru**, one aggregated record per request on `request.state`, per-route level policy defaulting to full. See [Observability](observability.md) |
 | ~~Storing a log-safe user handle~~ | ~~Step 3~~ | **Settled: not stored.** A truncated SHA-256 of `healthUserId` is a pure function, so it is recomputed on demand — no column, no migration |
@@ -25,7 +25,7 @@ user, rather than assuming.
 | ~~Queue technology~~ | ~~Step 3~~ | **Settled 2026-09-25: NATS JetStream**, file storage. See [Orchestration](orchestration.md) and [the stack rationale](stack.md) |
 | ~~How durability is guaranteed~~ | ~~Step 3~~ | **Settled: ordering, not atomicity.** No broker can join our transaction; commit → publish → `PubAck` → 204, and 503 otherwise, loses nothing given Google's 7-day retry |
 | ~~What a failed flow trigger means~~ | ~~Step 5~~ | **Settled 2026-09-28: swallowed.** The trigger is a payload-free doorbell fired from a `BackgroundTask` after the 204, so it cannot delay the acknowledgement and its failure costs latency rather than data. The interval sweep that makes that honest belongs to step 9 |
-| A table for daily summaries | Step 8 | `daily-*` types carry a bare `date` -- a fourth time shape. They land in `unknown_data_points` today with their date read into `civil_date`, so they are queryable. Promote to their own table if a chart wants them |
+| A table for daily summaries | When a chart needs one | `daily-*` types carry a bare `date` -- a fourth time shape. They land in `unknown_data_points` with their date read into `civil_date`, so they are queryable, and every dashboard chart reads them fine from there. Promote to their own table if a chart needs one |
 | Rollup-only data types | Step 8 or 9 | `floors`, `total-calories` and `calories-in-heart-rate-zone` support no `list`, only `rollUp`/`dailyRollUp`. `floors` now uses `dailyRollUp` and lands in `unknown_data_points`; **total-calories and calories-in-heart-rate-zone remain uncollected**. Google serves only a few months of history, so the gap is recoverable only for a while; they still need a second read path |
 | Unfiltered high-frequency fetches | Step 9 | `heart-rate` and most other types accept no time filter, so a small interval is served by paging from now backwards until past the window. Correct, and wasteful: one hour of heart-rate scanned ~70,000 points to keep 52. Revisit if `reconcile` or `rollup` can narrow it |
 | Whether `recordId` is stable | Step 8 | Moot for fetched points -- Google sends no id, so ours is derived from the window and source. Still open for the webhook's `recordId`, which nothing reads yet |
@@ -38,7 +38,9 @@ user, rather than assuming.
 
 ## Deferred
 
-- Chart selection beyond steps / sleep / heart rate
+- **Expected values from an ML model** drawn on the charts, and a **recovery
+  check** of training load against next-morning HRV. See
+  [Charting](charting.md#deferred)
 - **A secret manager** for `DATA_ENCRYPTION_KEY`, `TOKEN_ENCRYPTION_KEY` and
   `SESSION_SECRET`, so a stolen disk or a compromised host no longer yields the
   keys — the threats [encryption at rest](encryption.md) leaves out of scope.
