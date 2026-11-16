@@ -88,9 +88,7 @@ export default function Bars({
       padding={padding}
       innerPadding={shown.length > 1 && rows.length <= 60 ? 1 : 0}
       groupMode="stacked"
-      valueScale={{ type: "linear", reverse }}
-      minValue={minValue}
-      maxValue={maxValue}
+      valueScale={{ type: "linear", min: minValue, max: maxValue, reverse }}
       colors={(bar) => {
         if (spacers.includes(bar.id)) return "transparent";
         return colorFor ? colorFor(bar) : colors[bar.id];
