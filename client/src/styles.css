@@ -406,6 +406,28 @@ code {
   background: none;
 }
 
+/* nivo applies its tooltip theme only to its built-in tooltips, so the custom
+   ones carry their own panel. */
+.tip {
+  display: block;
+  min-width: 8rem;
+  padding: 7px 10px;
+  color: var(--ink);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  background: #ffffff;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  box-shadow: 0 4px 14px rgba(15, 28, 35, 0.18);
+}
+
+/* Inside an MUI tooltip the panel is MUI's own. */
+.MuiTooltip-tooltip .tip {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+
 .tip strong {
   display: block;
   margin-bottom: 0.15rem;
