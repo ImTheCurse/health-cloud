@@ -1,6 +1,7 @@
 import { ResponsiveLine } from "@nivo/line";
 import { useMemo } from "react";
 
+import { usePreview } from "../chartMode.js";
 import { addDays, isoDate, parseIsoDate } from "../dates.js";
 import { formatDay, formatDayTime, formatNumber } from "../format.js";
 import { HOVER, INK_SOFT, nivoTheme, PERSONAL_BAND, PERSONAL_TONE, REFERENCE, RULE } from "../theme.js";
@@ -53,10 +54,11 @@ export default function TimeLine({
     value === null || value === undefined ? "–" : `${formatNumber(value, digits)}${unit}`;
   const formatShort = (value) => formatNumber(value, digits);
 
+  const preview = usePreview();
   const primary = visible[0];
   const stats = useMemo(
-    () => (references && primary ? summarize(primary.points.map((p) => p.y)) : null),
-    [references, primary],
+    () => (references && !preview && primary ? summarize(primary.points.map((p) => p.y)) : null),
+    [references, preview, primary],
   );
   const extremes = useMemo(() => {
     if (!stats || !primary) return null;

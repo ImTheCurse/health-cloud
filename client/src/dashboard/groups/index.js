@@ -3,7 +3,6 @@ import Breathing from "./Breathing.jsx";
 import Exercise from "./Exercise.jsx";
 import FoodBody from "./FoodBody.jsx";
 import Heart from "./Heart.jsx";
-import Running from "./Running.jsx";
 import Sleep from "./Sleep.jsx";
 
 /**
@@ -16,7 +15,6 @@ export const GROUPS = [
   { id: "breathing", label: "Breathing & oxygen", Component: Breathing, bucketed: true },
   { id: "activity", label: "Activity", Component: Activity, bucketed: true },
   { id: "exercise", label: "Exercise", Component: Exercise, bucketed: false },
-  { id: "running", label: "Running", Component: Running, bucketed: false },
   { id: "food", label: "Food & body", Component: FoodBody, bucketed: false },
 ];
 

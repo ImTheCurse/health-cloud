@@ -1,6 +1,7 @@
 import { ResponsiveScatterPlot } from "@nivo/scatterplot";
 import { useMemo, useState } from "react";
 
+import { usePreview } from "../chartMode.js";
 import { HOVER, INK, nivoTheme, REFERENCE } from "../theme.js";
 import { ExtremeMark, ReferenceLines } from "./Reference.jsx";
 import { summarize } from "./stats.js";
@@ -13,7 +14,7 @@ const MARGIN = { top: 26, right: 16, bottom: 42, left: 52 };
  *
  * - `points`: `[{ x, y, color?, ... }]`; a point's own colour wins over `color`.
  * - `line`: `[{ x, y }]` drawn in ink above the dots, such as a rolling mean.
- * - `reverse`: y grows downwards, so "max" is drawn lowest.
+ * - `stems`: a thin line from zero up to each dot, making a dot plot of counts.
  */
 export default function Scatter({
   points,
@@ -27,22 +28,28 @@ export default function Scatter({
   axisLeft,
   tooltip,
   onPoint,
+  stems = false,
 }) {
   const [hovered, setHovered] = useState(null);
   const data = useMemo(() => [{ id: "points", data: points }], [points]);
-  const stats = useMemo(() => (format ? summarize(points.map((p) => p.y)) : null), [format, points]);
+  const preview = usePreview();
+  const stats = useMemo(
+    () => (format && !preview ? summarize(points.map((p) => p.y)) : null),
+    [format, preview, points],
+  );
 
   const layers = useMemo(
     () => [
       "grid",
       "axes",
       Halo(hovered),
+      ...(stems ? [Stems(color)] : []),
       Dots(color),
       ...(line?.length > 1 ? [TrendLine(line)] : []),
       ...(stats ? [Overlay(stats, points, hidden, format)] : []),
       "mesh",
     ],
-    [hovered, color, line, stats, points, hidden, format],
+    [hovered, color, line, stats, points, hidden, format, stems],
   );
 
   return (
@@ -75,6 +82,29 @@ function Halo(hoveredId) {
     const node = nodes.find((candidate) => candidate.id === hoveredId);
     if (!node) return null;
     return <circle cx={node.x} cy={node.y} r={16} fill={HOVER} pointerEvents="none" />;
+  };
+}
+
+/** A thin line from zero up to each dot. */
+function Stems(fallback) {
+  return function StemLayer({ nodes, yScale }) {
+    const base = yScale(0);
+    return (
+      <g pointerEvents="none">
+        {nodes.map((node) => (
+          <line
+            key={node.id}
+            x1={node.x}
+            x2={node.x}
+            y1={base}
+            y2={node.y}
+            stroke={node.data.color ?? fallback}
+            strokeWidth={2}
+            strokeOpacity={0.55}
+          />
+        ))}
+      </g>
+    );
   };
 }
 

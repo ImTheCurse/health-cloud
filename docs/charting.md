@@ -1,8 +1,9 @@
 # Charting
 
 Part of the [health-cloud design context](CONTEXT.md). How the dashboard in
-`client/` turns the read API into charts: the tabs, the controls, every chart
-and why it was chosen, the colour rules, and what was deferred or turned down.
+`client/` turns the read API into charts: the home page, the tabs, the
+controls, every chart and why it was chosen, the colour rules, and what was
+deferred or turned down.
 
 ## Stack
 
@@ -32,9 +33,10 @@ open:
 - Every **5 minutes**, and on the refresh button, what is on screen
   re-fetches; everything else held is marked stale and re-fetches when next
   shown.
-- Once every chart on the open tab has its data, the other tabs' range views
-  are fetched in the background, cheapest first, two at a time, so switching
-  tabs usually shows data straight away. The raw-sample routes are skipped.
+- Once every chart on the open tab has its data, the other tabs' views over
+  the same span are fetched in the background, cheapest first, two at a time,
+  so switching tabs usually shows data straight away. The raw-sample routes are
+  skipped. The home page preloads nothing; its tiles fetch only what they show.
 - **Memory only.** Nothing is written to `localStorage` or IndexedDB: that would
   leave decrypted health values on disk and undo
   [encryption at rest](encryption.md). A reload starts empty.
@@ -42,6 +44,83 @@ open:
 The refresh indicator is its own component, subscribed to the store, so a
 request finishing re-renders it and the charts that use that data, not the whole
 dashboard. Re-rendering every chart on every response froze the page.
+
+## Pages
+
+Three levels, each a history entry, so the browser's back button climbs back
+up:
+
+1. **Home:** the day's most telling figures as tiles. The default page.
+2. **A group:** one tab's charts as compact previews, opened from a tile, from
+   "← Home", or from the tab row.
+3. **A chart:** one card in full, opened by clicking its preview.
+
+## Home page
+
+One day, today by default, with ‹ › arrows and a date picker. Ten tiles in two
+groups, activity first:
+
+| Group | Tiles |
+| --- | --- |
+| **Activity** (the last 24 hours on today, else that day) | steps, distance, Active Zone Minutes, heart-rate average |
+| **Recovery** (overnight) | sleep, resting heart rate, nightly HRV, skin temperature, breathing rate, nightly blood oxygen |
+
+- **The figure** is that day's value. On **today**, steps, distance, Active Zone
+  Minutes and heart-rate average cover the **last 24 hours** instead, so a
+  morning is not compared with whole days; the Activity heading says so. Skin temperature is the night's difference from the
+  personal baseline Google reports.
+- **The comparison** is against the **average of the seven complete days
+  before**: a chip at the top right with an ▲/▼ and the difference, blue where
+  that direction is usually better and orange where it is usually worse, grey
+  where neither is (heart-rate average, breathing rate). A difference too small
+  to show at the tile's precision reads "= usual". Skin temperature has no
+  chip, since it is already a difference. The average itself is printed under
+  the figure.
+- **A bar** under each figure. Totals (steps, distance, Active Zone Minutes)
+  **fill up from zero**, full at the week's best day or at the day itself when
+  it beats it. Every other tile shows the day against the **personal range**:
+  the same 10th-to-90th percentile of the 30 days before that the charts draw,
+  as a green band, with the day as a dot, the 7-day average as a tick, and a
+  caption giving the range in figures. The dot is in the tile's colour inside
+  the range, and blue or orange outside it by which side is usually better. The
+  six overnight tiles read 30 days of their daily routes for it. The heart-rate
+  average reads the earlier days in a second, daily-bucket request, since they
+  are a month of raw samples until step 8a: its figure shows first and its
+  range when that lands. A tile with under 14 days of history shows the past
+  week's lowest to highest in grey instead.
+- **Layout:** column counts that divide each group evenly, so no row ends on a
+  lone tile: the four Activity tiles in one row, the six Recovery tiles three by
+  two, both two across on a medium page and one on a phone. On a wide page the
+  three rows fill the screen below the controls exactly, the figures growing
+  with the window's height, so the whole day reads without scrolling.
+- **An icon** from `@mui/icons-material` per tile, in the colour of its chart.
+- **Clicking a tile** opens its group on that day, scrolls to the matching card
+  and outlines it briefly. Where the day view has no such card, the group opens
+  at the top.
+- Each tile has its **own loading, empty ("No data yet") and error state.**
+- **Data** comes from the existing routes over the day and the seven before it;
+  the Activity tiles and heart-rate average read hourly buckets so the last 24
+  hours can be cut from them. The heart-rate average reads about eight days of
+  raw samples, so it arrives last; the hourly summaries of step 8a make it
+  cheap.
+
+## Previews and the chart page
+
+On a group page every card is a **preview**: smaller, without its note, sub-tabs,
+legend, "Learn more", dashed reference lines or ringed extremes. The personal
+range band and its marks stay. Clicking a preview opens its **chart page**: the
+card, and any other card on the tab measuring the same thing (steps bars, steps
+by hour and the steps calendar together), full width and taller, with
+everything back. A card is named by its `explain` key, which is also what a home
+tile scrolls to. A chart page whose cards have nothing at the chosen span says
+so.
+
+Previews are all one size and fill every row: three across on a wide page, two
+on a medium one, one on a phone. When the count does not divide evenly the last
+cards widen rather than leave one alone on a row: four become two and two, and
+a remainder of two shares the row half and half. Only a tab with a single card
+shows it on a row by itself. A card stretched by a taller neighbour in its row grows its
+chart to fill the space; the height a card asks for is its minimum.
 
 ## Tabs and grouping
 
@@ -54,30 +133,36 @@ charts render.
 | **Sleep** | sleep sessions and stages, skin temperature, breathing rate per stage |
 | **Breathing & oxygen** | SpO₂, nightly SpO₂, daily breathing rate |
 | **Activity** | steps, distance, floors, activity level, Active Zone Minutes, sedentary periods |
-| **Exercise** | exercise sessions |
-| **Running** | exercise sessions where `exercise_type` is `RUNNING` |
+| **Exercise** | exercise sessions, then the runs among them |
 | **Food & body** | nutrition, hydration, height, VO₂ max, run VO₂ max |
 
-Running is its own tab because runs are recorded by the watch (`FITBIT` source)
-with pace, distance and zone minutes. The same runs also arrive from Nike Run
-Club through `HEALTH_KIT`, which reads drop, so nothing is counted twice.
+Runs share the Exercise tab: they are exercise sessions from the same route,
+filtered to `exercise_type` `RUNNING`, and a tab of their own added a click
+without adding anything to read. They are recorded by the watch (`FITBIT`
+source) with pace, distance and zone minutes. The same runs also arrive from
+Nike Run Club through `HEALTH_KIT`, which reads drop, so nothing is counted
+twice.
 
 ## Controls
 
-The view lives in the query string (`group`, `range`, `bucket`, `day`, `res`),
-so a reload or a shared link lands on the same view, and the browser's back
-button leaves a day.
+The view lives in the query string (`group`, `chart`, `span`, `day`, `from`,
+`bucket`, `res`), so a reload or a shared link lands on the same view. No
+`group` is the home page; no `day` is today.
 
-- **Range:** 7 / 30 / 90 days, ending today in the browser's local date.
-  `end` is sent as tomorrow, because the API excludes it.
-- **Bucket size:** hourly / daily, and hourly only at 7 days; 30 and 90 days
-  are always daily, so a long range never asks for hundreds of thousands of
-  samples. It changes only the routes that take a `resolution`; the rest are
-  always daily. The hour-by-day heatmaps therefore appear at 7 days only.
-- **Default:** 7 days, hourly.
-- **A single day** opens from the date picker, the ‹ › arrows, or by clicking a
-  day on any chart. It has its own bucket size: 1 min / 5 / 10 / 30 min / 1 hour,
+- **Span:** Day / Week / Month / 3 months, the last 1, 7, 30 or 90 days **ending
+  on the chosen day**, or **Custom**: a From and a To date picker, at most 90
+  days apart, so the raw-sample routes stay bounded until step 8a. `end` is sent
+  as the day after the last one shown, because the API excludes it.
+- **The chosen day** moves with the ‹ › arrows, by the span's length, or with
+  the date picker. Clicking a day on any chart switches to Day on that date.
+- **Bucket size:** hourly / daily, offered only for spans of seven days or
+  fewer; longer spans are always daily, so a long span never asks for hundreds
+  of thousands of samples. It changes only the routes that take a `resolution`;
+  the rest are always daily. The hour-by-day heatmaps therefore appear at a
+  week or less only.
+- **A single day** has its own bucket size: 1 min / 5 / 10 / 30 min / 1 hour,
   defaulting to 1 hour.
+- **Defaults:** a week, hourly, ending today.
 
 ## On every chart
 
@@ -94,6 +179,8 @@ button leaves a day.
   from the legend.
 - **Hover:** a soft column behind the hovered time or bar, a halo behind a
   hovered dot, and a tooltip with the exact value.
+- **On the chart page only:** the reference lines, extremes, legend and
+  "Learn more" below; previews leave them out.
 - **Learn more:** a dialog per chart (`explain.js`) saying what the measurement
   is, how the watch gets it, and which way is usually better, ending with a
   not-medical-advice line.
@@ -138,12 +225,35 @@ button leaves a day.
 
 ### Activity
 
-- **Steps**, **distance**, **floors**, **sitting still:** bars.
+Each card uses the form that fits its data, so the tab is not six bar charts in
+a row.
+
+- **Steps:** bars, the one place a bar chart is the right form: comparing one
+  day's count with another's. At daily buckets a solid line runs through them at
+  the average of the last 7 days with steps, so the trend shows through the
+  day-to-day noise; hourly buckets get no average. On a day, a **running total**
+  line instead, which climbs on a walk and flattens while sitting.
+- **Distance:** a **running total** line over the span, or through the day. Daily
+  distance mostly repeats steps; the total answers a different question ("how far
+  this month"). No reference lines: the average or maximum of a running total
+  means nothing. The bucket's own amount shows on hover.
+- **Activity level:** a **stacked area** of hours a day (minutes an hour at
+  hourly buckets) at each level, so the split and the total read at once.
+  Very active sits on the baseline and sedentary, the largest, on top, so the
+  thin active bands stay readable. Lanes on a day.
+- **Active Zone Minutes:** a **heatmap**, one row per zone (fat burn, cardio,
+  peak) and one column per day, one blue ramp darker for more minutes. Each row
+  is named, so colour is never the only cue. Hourly data is summed to days.
+  Lanes on a day.
+- **Floors:** a **dot plot**, a dot at each day's count with a thin stem down to
+  zero. Floors are small whole numbers, often zero, and a wall of bars hid the
+  busy days.
+- **Sitting still:** a **line** of hours a day, with the reference lines: the
+  trend matters more than any one day. Lanes of idle periods on a day.
 - **Steps by hour** (hourly buckets only): the same hour-by-day heatmap.
-- **Steps calendar** (90 days only): one square a day, darker for more. Bars are
-  unreadable at 90 days; a calendar shows weekly patterns.
-- **Activity level** and **Active Zone Minutes:** sub-tabs over a range, lanes on
-  a day.
+- **Steps calendar** (exactly 90 days: 3 months, or a 90-day custom span): one
+  square a day, darker for more. Bars are unreadable at 90 days; a calendar
+  shows weekly patterns.
 
 ### Exercise
 
@@ -157,20 +267,20 @@ button leaves a day.
   heart-rate zone weighted 1 (light) to 4 (peak), the usual zone-based
   training-load estimate.
 - **Minutes of exercise:** bars.
-- **Latest sessions:** a table.
-- **On a day:** session lanes and the day's sessions.
+- **Latest sessions:** a table, last on the tab.
+- **On a day:** session lanes and the day's sessions, then the same for runs.
 
-### Running
+Then the running charts, on the same tab:
 
 - **Runs:** the session swarm, runs only.
-- **Pace:** min/km per run, faster at the top, with the mean of the last 5 runs.
+- **Pace:** min/km per run on an ordinary axis, so faster runs sit lower and
+  improving pace reads as a falling line, with the mean of the last 5 runs.
 - **Weekly distance:** km per Monday-started week, with a tick for the week's
   longest run.
 - **Aerobic efficiency:** pace against average heart rate per run, older runs
   lighter. Fitter moves dots towards faster pace at the same heart rate.
 - **Intensity by week:** share of each week's running time in each zone, as 100%
   stacked bars; most plans aim for about 80% easy.
-- **On a day:** run lanes and the day's runs.
 
 ### Food & body
 
@@ -185,8 +295,8 @@ block, so twelve five-minute "light" buckets read as one hour of light. Lanes
 rather than one strip because a single bucket often spans two categories, and a
 strip would have to hide one. Hovering a block shows its times and minutes.
 
-The same lanes show idle periods on Activity, and sessions by type on Exercise
-and Running.
+The same lanes show idle periods on Activity, and sessions by type and runs on
+Exercise.
 
 ## Colour
 
@@ -207,6 +317,9 @@ Colours live in `client/src/dashboard/theme.js`.
 
 ## Deferred
 
+- **Scores on the home page:** stress, recovery, strain and a sleep score,
+  calculated from the measurements already stored, in a row of their own above
+  the tiles. After the home page settles.
 - **Recovery check:** each day's training load against the next morning's HRV.
   Noisy without months of data. Revisit with the ML work.
 - **Expected values from an ML model:** expected lines or ranges overlaid on the

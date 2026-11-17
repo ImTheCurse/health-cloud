@@ -473,3 +473,52 @@ export function dailyStatValues(payloads) {
   }
   return values;
 }
+
+// --- activity ----------------------------------------------------------------
+
+/**
+ * A running total through `rows` (`{ x, value }`), as line points. It stops at
+ * the last bucket with anything in it, so today's line does not run flat into
+ * hours that have not happened.
+ */
+export function runningTotal(rows) {
+  let last = -1;
+  rows.forEach((row, index) => {
+    if (row.value) last = index;
+  });
+  let total = 0;
+  return rows.slice(0, last + 1).map((row) => {
+    total += row.value ?? 0;
+    return { x: row.x, y: total, amount: row.value ?? 0 };
+  });
+}
+
+/**
+ * The mean of each row's value and the `window - 1` before it, counting only
+ * rows with something in them: an empty day is a gap in the record, not a
+ * measured zero. Null where the window holds nothing.
+ */
+export function rollingAverage(rows, window) {
+  return rows.map((row, index) => {
+    const present = rows
+      .slice(Math.max(0, index - window + 1), index + 1)
+      .map((candidate) => candidate.value)
+      .filter((value) => value > 0);
+    const value = present.length ? present.reduce((a, b) => a + b, 0) / present.length : null;
+    return { key: row.key, value };
+  });
+}
+
+/** A category series summed per day: `{ [category]: Map(day -> total) }`. */
+export function categoryDailyTotals(series, categories) {
+  const totals = Object.fromEntries(categories.map((category) => [category, new Map()]));
+  for (const bucket of series?.buckets ?? []) {
+    const day = bucket.start.slice(0, 10);
+    for (const category of categories) {
+      const value = bucket.totals[category];
+      if (!value) continue;
+      totals[category].set(day, (totals[category].get(day) ?? 0) + value);
+    }
+  }
+  return totals;
+}

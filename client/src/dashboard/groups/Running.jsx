@@ -28,8 +28,12 @@ const ZONE_KEYS = EXERCISE_ZONES.map((zone) => ({ key: zone, label: ZONE_LABELS[
 // Runs averaged into the pace trend line.
 const TREND_WINDOW = 5;
 
+/**
+ * The running cards, drawn on the Exercise tab after the cards for every
+ * session. Runs come from the same `/exercise` response.
+ */
 export default function Running({ view }) {
-  const routes = ROUTES.running(view);
+  const routes = ROUTES.exercise(view);
   const exercise = useData(...routes.exercise);
   const runs = useMemo(
     () => (exercise.data?.sessions ?? []).filter((session) => session.exercise_type === RUNNING),
@@ -90,7 +94,7 @@ function PaceTrend({ state, runs, view }) {
   return (
     <Card
       title="Pace"
-      note={`Minutes per kilometre, faster at the top. The line is the mean of the last ${TREND_WINDOW} runs.`}
+      note={`Minutes per kilometre, faster lower down. The line is the mean of the last ${TREND_WINDOW} runs.`}
       explain="pace"
       states={[state]}
       empty={points.length === 0}
@@ -107,9 +111,8 @@ function PaceTrend({ state, runs, view }) {
         line={hidden.has("trend") ? null : trend}
         hidden={hidden}
         format={formatPace}
-        reverse
         xScale={{ type: "time", format: "native", precision: "minute", min: from, max: to }}
-        yScale={{ type: "linear", min: "auto", max: "auto", reverse: true }}
+        yScale={{ type: "linear", min: "auto", max: "auto" }}
         axisBottom={{ tickValues: axis.tickValues, format: axis.format }}
         axisLeft={{ format: formatPace }}
         tooltip={(point) => <RunTip run={point.run} pace={point.pace} />}

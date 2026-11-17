@@ -10,6 +10,7 @@ import { ROUTES } from "../routes.js";
 import { CHART } from "../theme.js";
 import { useData } from "../useData.js";
 import { BarsCard } from "./common.jsx";
+import Running from "./Running.jsx";
 import { useTypeColors } from "./view.js";
 
 export default function Exercise({ view }) {
@@ -23,6 +24,7 @@ export default function Exercise({ view }) {
       <>
         <SessionLanes title="Sessions across the day" state={exercise} sessions={sessions} colorOf={colorOf} />
         <SessionTable title="Sessions" state={exercise} sessions={sessions} />
+        <Running view={view} />
       </>
     );
   }
@@ -38,6 +40,7 @@ export default function Exercise({ view }) {
         view={view}
       />
       <MinutesCard state={exercise} sessions={sessions} view={view} />
+      <Running view={view} />
       <SessionTable title="Latest sessions" state={exercise} sessions={sessions} limit={12} />
     </>
   );

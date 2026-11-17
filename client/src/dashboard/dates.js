@@ -22,12 +22,6 @@ export function today() {
   return isoDate(new Date());
 }
 
-/** The last `days` days including today. `end` is excluded, as the API wants. */
-export function rangeEndingToday(days) {
-  const end = addDays(today(), 1);
-  return { start: addDays(end, -days), end };
-}
-
 /** One day, as a half-open range. */
 export function dayRange(day) {
   return { start: day, end: addDays(day, 1) };

@@ -1,6 +1,7 @@
 import { ResponsiveBar, ResponsiveBarCanvas } from "@nivo/bar";
 import { useMemo, useState } from "react";
 
+import { usePreview } from "../chartMode.js";
 import { formatDay, formatDayTime, formatNumber } from "../format.js";
 import { HOVER, nivoTheme, REFERENCE } from "../theme.js";
 import { barLabel, barTicks } from "./axis.js";
@@ -61,9 +62,10 @@ export default function Bars({
       ),
     [rows, shown, spacers],
   );
+  const preview = usePreview();
   const stats = useMemo(
-    () => (references ? summarize(totals.filter((total) => total > 0)) : null),
-    [references, totals],
+    () => (references && !preview ? summarize(totals.filter((total) => total > 0)) : null),
+    [references, preview, totals],
   );
 
   const canvas = rows.length > CANVAS_FROM;

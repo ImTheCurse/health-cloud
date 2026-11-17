@@ -44,9 +44,6 @@ export const ROUTES = {
   exercise: (view) => ({
     exercise: ["/exercise", plain(view)],
   }),
-  running: (view) => ({
-    exercise: ["/exercise", plain(view)],
-  }),
   food: (view) => ({
     nutrition: ["/nutrition", plain(view)],
     hydration: ["/hydration", plain(view)],

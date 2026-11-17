@@ -149,8 +149,10 @@ Progress marker — tick a box only when the step is genuinely complete.
       rate, oxygen saturation, breathing, sleep, activity, exercise, nutrition,
       hydration and body, reading only `FITBIT` and `GOOGLE_HEALTH` sources.
       Verified by hand against the real database with a live session. 453 tests.
-- [ ] **8. React dashboard** — every `/data/*` route, grouped by type into
-      tabs, over a range or a single day. See [Charting](charting.md)
+- [ ] **8. React dashboard** — a home page of the day's key figures against
+      the past week, opening into every `/data/*` route grouped by type into
+      tabs as compact previews, each with a full chart page, over a day, a
+      week, a month, three months or a custom span. See [Charting](charting.md)
 - [ ] **8a. Hourly heart-rate summaries** — **next task.** A stored hourly
       rollup per user (min, mean, max, count, and time in each zone),
       written by the fetcher flow and the backfill, so 30- and 90-day views

@@ -8,6 +8,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import { useState } from "react";
 
 import CardLoading from "./CardLoading.jsx";
+import { scaledHeight, useChartMode } from "./chartMode.js";
 import ChartBoundary from "./ChartBoundary.jsx";
 import { EXPLAIN } from "./explain.js";
 
@@ -18,7 +19,11 @@ import { EXPLAIN } from "./explain.js";
  *
  * - `states`: every `useData` result the chart draws from.
  * - `legend`: `[{ id, label, color, shape }]`; with `onToggle`, entries are buttons.
- * - `explain`: a key into `EXPLAIN`.
+ * - `explain`: a key into `EXPLAIN`, and the card's name for its detail page.
+ *
+ * As a preview it drops the note, toolbar, legend and "Learn more", draws
+ * smaller, and opens its detail page when clicked. On a detail page only the
+ * cards named by it render, taller and full width.
  */
 export default function Card({
   title,
@@ -31,15 +36,21 @@ export default function Card({
   states = [],
   empty = false,
   emptyText = "Nothing recorded in this range.",
-  height = 240,
-  wide = false,
+  height: baseHeight = 240,
+  wide: baseWide = false,
   children,
 }) {
   const [open, setOpen] = useState(false);
+  const { mode, chart, onOpen } = useChartMode();
+  if (mode === "detail" && chart && explain !== chart) return null;
+  const preview = mode === "preview";
+  const height = scaledHeight(baseHeight, mode);
+  const wide = mode === "detail" ? true : baseWide;
+
   const failed = states.find((state) => state.status === "error");
   const loading = states.some((state) => state.status === "loading");
   const showBody = !failed && !loading && !empty;
-  const article = explain ? EXPLAIN[explain] : null;
+  const article = explain && !preview ? EXPLAIN[explain] : null;
 
   let body = <ChartBoundary resetKeys={states.map((state) => state.data)}>{children}</ChartBoundary>;
   if (failed) body = <p className="card-state alert">Couldn't load this: {failed.error.message}</p>;
@@ -49,7 +60,7 @@ export default function Card({
   else if (empty) body = <p className="card-state">{emptyText}</p>;
 
   return (
-    <figure className={wide ? "card wide" : "card"}>
+    <figure className={`card${wide ? " wide" : ""}${preview ? " preview" : ""}`} data-explain={explain}>
       <figcaption>
         <div className="card-head">
           <h2>{title}</h2>
@@ -59,15 +70,21 @@ export default function Card({
             </Button>
           )}
         </div>
-        {note && <p className="card-note">{note}</p>}
-        {showBody && toolbar}
-        {showBody && legend && legend.length > 0 && (
+        {note && !preview && <p className="card-note">{note}</p>}
+        {showBody && !preview && toolbar}
+        {showBody && !preview && legend && legend.length > 0 && (
           <Legend items={legend} hidden={hidden} onToggle={onToggle} />
         )}
       </figcaption>
-      <div className="card-body" style={{ height: showBody && height !== "auto" ? height : undefined }}>
+      <div
+        className={showBody && height !== "auto" ? "card-body grows" : "card-body"}
+        style={{ minHeight: showBody && height !== "auto" ? height : undefined }}
+      >
         {body}
       </div>
+      {preview && explain && onOpen && (
+        <ButtonBase className="card-open" aria-label={`Open ${title} in full`} onClick={() => onOpen(explain)} />
+      )}
       {article && (
         <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
           <DialogTitle>{article.title ?? title}</DialogTitle>
