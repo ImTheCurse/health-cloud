@@ -8,7 +8,7 @@ proposing or implementing anything.**
 
 The detail lives in the linked docs, not in `CONTEXT.md`: `stack.md`,
 `ingestion.md`, `orchestration.md`, `data-model.md`, `auth.md`,
-`observability.md`, `testing.md`, `operations.md`, `decisions.md`. **Follow the
+`observability.md`, `testing.md`, `operations.md`, `decisions.md`, `charting.md`, `skills.md`. **Follow the
 links and read the ones covering the area you are about to touch** — they hold
 the reasoning behind each decision and the alternatives already rejected. The
 design was settled through a grilling session; do not relitigate decisions

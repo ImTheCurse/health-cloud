@@ -27,3 +27,9 @@ export async function fetchAccount() {
 export function signOut() {
   return request("/auth/logout", { method: "POST" });
 }
+
+/** One `/data/*` route. Null when the session has gone. */
+export function fetchData(path, params, signal) {
+  const query = new URLSearchParams(params).toString();
+  return request(`/data${path}?${query}`, { signal });
+}

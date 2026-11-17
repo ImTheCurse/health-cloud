@@ -14,7 +14,7 @@ user, rather than assuming.
 | --- | --- | --- |
 | ~~Token encryption library~~ | ~~Step 2~~ | **Settled: not Tink.** `cryptography` AES-256-GCM (`TOKEN_ENCRYPTION_KEY`) and PyJWT HS256 (`SESSION_SECRET`), both plain `openssl rand -hex 32` values. Tink is reserved for verifying Google's published webhook keyset, which needs no secret key material |
 | Push alert service | Step 9 | ntfy vs Gotify — likely whichever is already running on the self-hosted box |
-| How `client/` is served in production | Step 8 / 10 | Tooling settled at step 1: **Vite + React (JavaScript)**. Still open: static build served from the same host as the API, sharing a registrable domain for cookie auth |
+| How `client/` is served in production | Step 10 | Tooling settled at step 1: **Vite + React (JavaScript)**. Still open: static build served from the same host as the API, sharing a registrable domain for cookie auth |
 | ~~Role of `google-credentials.json`~~ | ~~Step 2~~ | **Settled: none.** Client ID/secret live in `.env`; the file is kept but unused |
 | ~~Logging~~ | ~~Step 3~~ | **Settled: loguru**, one aggregated record per request on `request.state`, per-route level policy defaulting to full. See [Observability](observability.md) |
 | ~~Storing a log-safe user handle~~ | ~~Step 3~~ | **Settled: not stored.** A truncated SHA-256 of `healthUserId` is a pure function, so it is recomputed on demand — no column, no migration |
@@ -25,7 +25,7 @@ user, rather than assuming.
 | ~~Queue technology~~ | ~~Step 3~~ | **Settled 2026-09-25: NATS JetStream**, file storage. See [Orchestration](orchestration.md) and [the stack rationale](stack.md) |
 | ~~How durability is guaranteed~~ | ~~Step 3~~ | **Settled: ordering, not atomicity.** No broker can join our transaction; commit → publish → `PubAck` → 204, and 503 otherwise, loses nothing given Google's 7-day retry |
 | ~~What a failed flow trigger means~~ | ~~Step 5~~ | **Settled 2026-09-28: swallowed.** The trigger is a payload-free doorbell fired from a `BackgroundTask` after the 204, so it cannot delay the acknowledgement and its failure costs latency rather than data. The interval sweep that makes that honest belongs to step 9 |
-| A table for daily summaries | Step 8 | `daily-*` types carry a bare `date` -- a fourth time shape. They land in `unknown_data_points` today with their date read into `civil_date`, so they are queryable. Promote to their own table if a chart wants them |
+| A table for daily summaries | When a chart needs one | `daily-*` types carry a bare `date` -- a fourth time shape. They land in `unknown_data_points` with their date read into `civil_date`, so they are queryable, and every dashboard chart reads them fine from there. Promote to their own table if a chart needs one |
 | Rollup-only data types | Step 8 or 9 | `floors`, `total-calories` and `calories-in-heart-rate-zone` support no `list`, only `rollUp`/`dailyRollUp`. `floors` now uses `dailyRollUp` and lands in `unknown_data_points`; **total-calories and calories-in-heart-rate-zone remain uncollected**. Google serves only a few months of history, so the gap is recoverable only for a while; they still need a second read path |
 | Unfiltered high-frequency fetches | Step 9 | `heart-rate` and most other types accept no time filter, so a small interval is served by paging from now backwards until past the window. Correct, and wasteful: one hour of heart-rate scanned ~70,000 points to keep 52. Revisit if `reconcile` or `rollup` can narrow it |
 | Whether `recordId` is stable | Step 8 | Moot for fetched points -- Google sends no id, so ours is derived from the window and source. Still open for the webhook's `recordId`, which nothing reads yet |
@@ -33,28 +33,33 @@ user, rather than assuming.
 | Combining sources | Before a chart needs a non-Fitbit source | Steps, distance and exercise arrive from Fitbit and from Apple HealthKit (including Nike Run Club), overlapping in time, so summing every source double-counts. Reads use `FITBIT` and `GOOGLE_HEALTH` only for now. Merging, averaging, or using Google's own deduplicated `dailyRollUp` totals is undecided. See [Data model](data-model.md) |
 | Sampling the request log | When log volume is visible | Every route logs at `ALWAYS` today. Which routes, if any, should move to sampling — the read API is the likely candidate — is undecided. See [Observability](observability.md) |
 | Short awakenings stored as sleep stages | When `session_segments` is read for sleep | `shortAwakenings` map to `SegmentType.SLEEP_STAGE`, and Google labels them `LIGHT`, so they overlap the real stages in `session_segments`. The sleep read builds stages from the session's `value` and takes minutes per stage from Google's `stagesSummary`, so nothing reads them yet. The fix is a segment type of their own, re-derived from `raw` |
+| ~~Deep historical backfill~~ | ~~Before Google stops serving the oldest days~~ | **Settled 2026-11-16.** Types Google cannot filter by time are backfilled in **one backward pass** from now to the start of the window, committing each day as the pass leaves it, with the token re-checked before every page and the page limit scaled to the window (50 per day). The five filterable types still go a day at a time. Heart-rate is kept at full resolution for the whole window. `list` serves roughly 4 months back (steps from 120 days, none from 365, probed 2026-11-01) |
 | Alembic | Before step 10, or before stored history outgrows what Google serves — whichever comes first | Not yet. Until then a schema change drops the affected tables (`db reset-measurements`) and re-backfills, which is cheap while Google can serve everything stored. It stops being cheap at production cutover, and once the oldest stored data is older than Google's ~4 months of history. Adopting later costs a baseline autogenerated from the models plus `alembic stamp head` |
 | ~~Postgres in CI~~ | ~~Step 3~~ | **Settled 2026-09-25: yes.** A `postgres:17-alpine` service plus `pgq install` on the `backend-api` job. Declined earlier only while nothing touched a database |
 
 ## Deferred
 
-- Chart selection beyond steps / sleep / heart rate
+- **Expected values from an ML model** drawn on the charts, and a **recovery
+  check** of training load against next-morning HRV. See
+  [Charting](charting.md#deferred)
 - **A secret manager** for `DATA_ENCRYPTION_KEY`, `TOKEN_ENCRYPTION_KEY` and
   `SESSION_SECRET`, so a stolen disk or a compromised host no longer yields the
   keys — the threats [encryption at rest](encryption.md) leaves out of scope.
   Revisit NATS and the Prefect database with it
 - **Binding ciphertexts to their rows** (AES-GCM associated data), so a SQL
   *write* cannot swap encrypted values between rows undetected
-- **A faster backfill.** Only five types have a known filter field; the rest are
-  fetched unfiltered, newest first, a day at a time, so a 30-day backfill re-reads
-  newer days for every older one. Probing filter fields for the other types, or a
-  single backward pass that buckets points into days, would remove most of it
-- **Deep historical backfill** beyond the earliest stored day. `list` served
-  steps from 120 days back and none from 365 (probed 2026-11-01). The backfill
-  splits a window into days and unfiltered types page from now backwards per
-  day, so cost grows with the square of the window, and the 50-page cap stops
-  heart-rate after roughly a week. Going deep wants a single pass for
-  unfiltered types
+- **Backfill as a durable workflow.** `backfill run` is a CLI that runs in the
+  foreground: an interrupted run keeps every committed day but restarts from
+  "now", and nothing retries it or records how far it got. It belongs in a
+  Prefect flow alongside the step 9 `:reconcile` schedule, with per-type
+  progress, retries and a resumable cursor
+- **Filter fields for more types.** Only five types have a verified filter
+  field. Probing the others would let them be fetched a day at a time, which is
+  cheaper still than one backward pass
+- **Reading 90 days of heart-rate quickly.** A full-resolution heart-rate
+  backfill is about 35,000 rows a day, and the read API decrypts and aggregates
+  in Python, so a 30- or 90-day chart reads a million rows or more. Stored
+  hourly rollups would fix it without discarding the samples
 - **Binding Postgres to `127.0.0.1`** and replacing the default password — it
   is published on every interface today. The user's own task
 - The ML layer over collected data — `raw_notifications` and the `raw` column

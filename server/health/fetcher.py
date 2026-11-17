@@ -12,6 +12,8 @@ durable execution was judged unnecessary.
 """
 
 import datetime as dt
+import math
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -20,7 +22,7 @@ from sqlmodel import Session, select
 
 from server.db.upsert import replace_segments, upsert_data_point, upsert_many
 from server.health.client import HealthDataClient, within
-from server.health.const import LIST_UNSUPPORTED, UPSERT_BATCH_SIZE
+from server.health.const import LIST_UNSUPPORTED, MAX_PAGES, UPSERT_BATCH_SIZE
 from server.health.credentials import AccessTokens
 from server.health.error import FetchError
 from server.health.points import build
@@ -107,14 +109,106 @@ class Fetcher:
             return FetchResult(data_type, 0, 0, 0, unsupported=True)
 
         token = self._tokens.for_user(user)
+        points = self._client.list_data_points(
+            access_token=token, data_type=data_type, start=start, end=end
+        )
+        result = self._store(
+            points,
+            user=user,
+            data_type=data_type,
+            start=start,
+            end=end,
+            deleted=deleted,
+        )
+        logger.info(
+            "fetched {} for user {}", result, hashed_log_id(user.health_user_id)
+        )
+        return result
+
+    def backfill_window(
+        self,
+        *,
+        user: User,
+        data_type: str,
+        start: dt.datetime,
+        end: dt.datetime,
+        on_day: Callable[[dt.date, int], None] | None = None,
+    ) -> FetchResult:
+        """Fetch ``[start, end)`` for a type Google cannot filter, in one pass.
+
+        Without a filter, every request starts at "now" and pages backwards, so
+        fetching day by day re-reads every newer day for each older one and the
+        cost grows with the square of the window. One pass from now back to
+        ``start`` reads each page once.
+
+        Each day is committed as the pass moves past it, so a run that dies
+        halfway keeps every finished day. The token is asked for before every
+        page, because a long pass outlives the hour an access token lasts, and
+        the page limit grows with the window.
+
+        Args:
+            on_day: called with each day and the rows written for it, once the
+                day is committed. Progress for the CLI.
+        """
+        if data_type in LIST_UNSUPPORTED:
+            return FetchResult(data_type, 0, 0, 0, unsupported=True)
+
+        days = max(1, math.ceil((end - start) / dt.timedelta(days=1)))
+        points = self._client.list_data_points(
+            access_token=lambda: self._tokens.for_user(user),
+            data_type=data_type,
+            start=start,
+            end=end,
+            max_pages=MAX_PAGES * days,
+        )
+        result = self._store(
+            points,
+            user=user,
+            data_type=data_type,
+            start=start,
+            end=end,
+            on_day=on_day,
+        )
+        logger.info(
+            "backfilled {} for user {}", result, hashed_log_id(user.health_user_id)
+        )
+        return result
+
+    def _store(
+        self,
+        points: Iterable[dict],
+        *,
+        user: User,
+        data_type: str,
+        start: dt.datetime,
+        end: dt.datetime,
+        deleted: bool = False,
+        on_day: Callable[[dt.date, int], None] | None = None,
+    ) -> FetchResult:
+        """Write the points that fall in the window.
+
+        Without ``on_day``, everything commits once at the end, so a partially
+        fetched notification is not half visible. With it, each day commits when
+        the next point belongs to a different day, and once more at the end.
+        """
         fetched_at = dt.datetime.now(dt.UTC)
         tombstone = fetched_at if deleted else None
 
         written = segments_written = skipped = 0
         pending: list[DataPointBase] = []
-        points = self._client.list_data_points(
-            access_token=token, data_type=data_type, start=start, end=end
-        )
+        current_day: dt.date | None = None
+        day_written = 0
+
+        def close_day() -> None:
+            nonlocal written, day_written
+            day_written += upsert_many(self._session, pending)
+            pending.clear()
+            self._session.commit()
+            written += day_written
+            if on_day is not None and current_day is not None:
+                on_day(current_day, day_written)
+            day_written = 0
+
         for point in points:
             row, segments = build(
                 point,
@@ -129,31 +223,27 @@ class Fetcher:
                 skipped += 1
                 continue
 
+            if on_day is not None:
+                day = _day_of(row)
+                if current_day is not None and day != current_day:
+                    close_day()
+                current_day = day
+
             if isinstance(row, SessionTimeInterval):
                 # One at a time, because its segments need the id back.
                 row_id = upsert_data_point(self._session, row)
                 replace_segments(self._session, row_id, segments)
                 segments_written += len(segments)
-                written += 1
+                day_written += 1
                 continue
 
             pending.append(row)
             if len(pending) >= UPSERT_BATCH_SIZE:
-                written += upsert_many(self._session, pending)
+                day_written += upsert_many(self._session, pending)
                 pending.clear()
 
-        written += upsert_many(self._session, pending)
-
-        # One commit for the interval, so a partially fetched window is not half
-        # visible: either the interval landed or the message stays unacknowledged
-        # and it is fetched again.
-        self._session.commit()
-
-        result = FetchResult(data_type, written, segments_written, skipped)
-        logger.info(
-            "fetched {} for user {}", result, hashed_log_id(user.health_user_id)
-        )
-        return result
+        close_day()
+        return FetchResult(data_type, written, segments_written, skipped)
 
     def _fetch_floor_days(
         self, user: User, start: dt.datetime, end: dt.datetime
@@ -296,3 +386,10 @@ def _window(interval: dict) -> tuple[dt.datetime, dt.datetime] | None:
     if start is None or end is None:
         return None
     return start - dt.timedelta(hours=14), end + dt.timedelta(hours=14)
+
+
+def _day_of(row: DataPointBase) -> dt.date | None:
+    """The UTC day a row falls on, which is where a backfill commits."""
+    if row.start_ts is not None:
+        return row.start_ts.astimezone(dt.UTC).date()
+    return row.civil_date

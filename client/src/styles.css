@@ -6,6 +6,7 @@
   --rule: #c4cfd4;
   --signal: #b4690e;
   --alert: #8c2f1e;
+  --card: #f4f7f8;
 
   --measure: 58ch;
 }
@@ -191,9 +192,909 @@ code {
   outline-offset: 2px;
 }
 
+/* --- dashboard ------------------------------------------------------------ */
+
+.page.wide {
+  max-width: 1240px;
+  padding-top: 1.5rem;
+  padding-bottom: 1rem;
+}
+
+.account {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.25rem 1.25rem;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+
+.account-who {
+  color: var(--ink);
+}
+
+.account .figure {
+  font-size: 1em;
+}
+
+.link {
+  font: inherit;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  padding: 0;
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.link:hover {
+  text-decoration-color: var(--signal);
+}
+
+.tabs {
+  margin-top: 1.25rem;
+}
+
+.group-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.group-nav .tabs {
+  margin-top: 0;
+  min-width: 0;
+}
+
+.custom-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 1rem 0;
+}
+
+.day-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.day-picker {
+  width: 11.5rem;
+}
+
+.refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-left: auto;
+}
+
+.spinning {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.day-title {
+  font-family: Newsreader, Georgia, serif;
+  font-size: 1.5rem;
+  font-weight: 400;
+}
+
+.hint {
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr));
+  gap: 1rem;
+}
+
+.card {
+  margin: 0;
+  min-width: 0;
+  padding: 1rem 1rem 0.75rem;
+  background: var(--card);
+  border: 1px solid var(--rule);
+}
+
+.card.wide {
+  grid-column: 1 / -1;
+}
+
+.card figcaption {
+  margin-bottom: 0.5rem;
+}
+
+.card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.card h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.card-note {
+  margin: 0.15rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+/* A card is a column, so when its row is stretched by a taller neighbour the
+   chart grows to fill it rather than leaving a gap below. The height a card
+   asks for is its minimum. */
+.card {
+  display: flex;
+  flex-direction: column;
+}
+
+.card-body {
+  position: relative;
+  min-width: 0;
+}
+
+.card-body.grows {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.card-body.grows > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.card-state {
+  margin: 0;
+  padding: 2rem 0;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.card-loading {
+  position: relative;
+  min-height: 120px;
+}
+
+.card-loading-spinner {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.skeleton-chart {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 8px;
+  height: 100%;
+  padding: 26px 16px 30px 0;
+  opacity: 0.55;
+}
+
+.skeleton-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.skeleton-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 100%;
+  border-bottom: 1px solid var(--rule);
+}
+
+.skeleton-rows {
+  display: grid;
+  gap: 10px;
+  padding: 0.5rem 0 1rem;
+  opacity: 0.55;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .MuiSkeleton-root::after {
+    animation: none;
+  }
+}
+
+.card-state.alert {
+  color: var(--alert);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.5rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font: inherit;
+  color: inherit;
+}
+
+/* A legend entry that switches a series is a button, and looks like one. */
+.legend-item:not(.static) {
+  padding: 0.2rem 0.65rem;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.legend-item:not(.static):hover {
+  background: var(--paper-sunk);
+  border-color: var(--ink-soft);
+}
+
+.legend-item.off {
+  color: var(--ink-soft);
+  background: transparent;
+  border-style: dashed;
+  text-decoration: line-through;
+}
+
+.legend-item.off .swatch {
+  opacity: 0.35;
+}
+
+.legend-item.Mui-focusVisible {
+  outline: 2px solid var(--signal);
+}
+
+.swatch {
+  display: inline-block;
+  flex: none;
+  background: var(--swatch);
+}
+
+.swatch.block {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.swatch.line {
+  width: 14px;
+  height: 2px;
+}
+
+.swatch.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.swatch.dash {
+  width: 16px;
+  height: 0;
+  border-top: 2px dashed var(--swatch);
+  background: none;
+}
+
+/* nivo applies its tooltip theme only to its built-in tooltips, so the custom
+   ones carry their own panel. */
+.tip {
+  display: block;
+  min-width: 8rem;
+  padding: 7px 10px;
+  color: var(--ink);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  background: #ffffff;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  box-shadow: 0 4px 14px rgba(15, 28, 35, 0.18);
+}
+
+/* Inside an MUI tooltip the panel is MUI's own. */
+.MuiTooltip-tooltip .tip {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+.tip strong {
+  display: block;
+  margin-bottom: 0.15rem;
+  font-weight: 600;
+}
+
+.tip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.tip-row.muted {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+}
+
+.tip-note {
+  display: grid;
+  gap: 2px;
+  max-width: 17rem;
+  margin-top: 6px;
+  padding: 6px 8px;
+  white-space: normal;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  border-left: 3px solid var(--tone);
+  background: color-mix(in srgb, var(--tone) 9%, #ffffff);
+}
+
+.tip-note.good {
+  --tone: #2a78d6;
+}
+
+.tip-note.watch {
+  --tone: #e5761f;
+}
+
+.tip .tip-note b {
+  font-family: inherit;
+  color: var(--ink);
+}
+
+.tip-row.current {
+  font-weight: 600;
+}
+
+.tip b {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-weight: 600;
+}
+
+.subtabs {
+  min-height: 34px;
+  margin: 0.5rem 0 0.25rem;
+  border-bottom: 0;
+}
+
+.subtabs .MuiTab-root {
+  min-height: 34px;
+  padding: 4px 10px;
+  font-size: 0.8125rem;
+}
+
+.subtab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.subtab-total {
+  color: var(--ink-soft);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+
+.lanes {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.5rem 0 0.25rem;
+}
+
+.lane {
+  display: grid;
+  grid-template-columns: 12rem 1fr;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.lane-label {
+  display: inline-flex;
+  white-space: nowrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+}
+
+.lane-total {
+  margin-left: auto;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+
+.lane-track {
+  position: relative;
+  height: 26px;
+  background: var(--paper-sunk);
+}
+
+.lane-span {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.lane-span:hover,
+.lane-span:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+  z-index: 1;
+}
+
+.lane-axis {
+  position: relative;
+  height: 1.25rem;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+}
+
+.lane-axis span {
+  position: absolute;
+  top: 0.15rem;
+  transform: translateX(-50%);
+}
+
+.lane-axis span:first-child {
+  transform: none;
+}
+
+.lane-axis span:last-child {
+  transform: translateX(-100%);
+}
+
+.explain h3 {
+  margin: 1rem 0 0.25rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.explain p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.explain-disclaimer {
+  margin-top: 1.25rem !important;
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 560px) {
+  .lane {
+    grid-template-columns: 6.5rem 1fr;
+  }
+
+  .refresh {
+    margin-left: 0;
+  }
+}
+
+.figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 2rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.figures dt {
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+}
+
+.figures dd {
+  margin: 0;
+}
+
+.figure-unit {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.sessions {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.sessions th {
+  color: var(--ink-soft);
+  font-weight: 500;
+  text-align: left;
+  padding: 0.35rem 0.75rem 0.35rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.sessions td {
+  padding: 0.4rem 0.75rem 0.4rem 0;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+
+.sessions .num {
+  text-align: right;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+.sessions th.num {
+  font-family: inherit;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .field-trace {
     animation: none;
     stroke-dashoffset: 0;
   }
+}
+
+/* --- home ------------------------------------------------------------------ */
+
+/* Activity, then recovery. Column counts divide each row evenly, so no row
+   ends on a lone tile: the four activity tiles in one row, the six recovery
+   tiles three by two, both two across on a medium page and one on a phone. */
+.home {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.tile-row-title {
+  margin: 0 0 0.5rem;
+  font-family: Newsreader, Georgia, serif;
+  font-size: 1.3rem;
+  font-weight: 400;
+}
+
+.tiles {
+  --columns: 1;
+  display: grid;
+  grid-template-columns: repeat(var(--columns), minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@container (min-width: 480px) {
+  .tiles {
+    --columns: 2;
+  }
+}
+
+/* On a wide page the three rows of tiles grow to fill the screen below the
+   controls; `--fill` is that height, measured by the page. It is a minimum, so
+   a tile never shrinks below what it holds. */
+@container (min-width: 1000px) {
+  .tiles[data-count="4"] {
+    --columns: 4;
+  }
+
+  .tiles[data-count="6"] {
+    --columns: 3;
+  }
+
+  .home {
+    min-height: var(--fill, auto);
+    grid-template-rows: 1fr 2fr;
+    gap: 0.75rem;
+  }
+
+  .tile-row-title {
+    margin-bottom: 0.35rem;
+    font-size: 1.15rem;
+    line-height: 1.3;
+  }
+
+  .tile-row {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .tile-row .tiles {
+    flex: 1;
+    grid-auto-rows: 1fr;
+  }
+
+  .tiles .tile-value .figure {
+    font-size: clamp(1.8rem, 4vh, 3rem);
+  }
+
+  .tiles .tile-label {
+    font-size: clamp(0.875rem, 1.8vh, 1rem);
+  }
+
+  .tiles .tile.MuiButtonBase-root {
+    min-height: 0;
+    padding-top: 0.75rem;
+    padding-bottom: 0.8rem;
+  }
+
+  .tiles .tile-head {
+    min-height: 1.6rem;
+  }
+
+  .tiles .tile-change.MuiChip-root {
+    height: 1.6rem;
+  }
+
+  .tiles .range-bar {
+    margin-top: 0.3rem;
+  }
+}
+
+.tile.MuiButtonBase-root {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 0.45rem;
+  min-height: 10.5rem;
+  padding: 0.85rem 1.15rem 0.9rem;
+  text-align: left;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.tile.MuiButtonBase-root:hover,
+.tile.MuiButtonBase-root.Mui-focusVisible {
+  border-color: var(--ink-soft);
+  box-shadow: 0 2px 10px rgba(15, 28, 35, 0.1);
+}
+
+.tile-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.85rem;
+}
+
+.tile-label {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  line-height: 1.25;
+}
+
+.tile-change.MuiChip-root {
+  height: 1.75rem;
+  border-radius: 0.875rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tile-change .MuiChip-label {
+  padding: 0 0.55rem;
+}
+
+.tile-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.tile-value .figure {
+  font-size: 2rem;
+  line-height: 1.1;
+}
+
+.tile-value .figure-unit {
+  font-size: 0.875rem;
+}
+
+.range-bar {
+  position: relative;
+  display: block;
+  height: 12px;
+  margin-top: 0.5rem;
+  background: var(--paper-sunk);
+  border-radius: 6px;
+}
+
+.range {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.range-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--rule);
+  border-radius: 6px;
+}
+
+/* The personal range: the same green as the band behind the charts, stronger
+   so it reads at this size. */
+.range-band.usual {
+  background: #9ccf9c;
+  box-shadow: inset 0 0 0 1px #6fb36f;
+}
+
+.range-caption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 0.75rem;
+  font-size: 0.75rem;
+}
+
+.range-week {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+}
+
+/* The same tick as on the bar, as the key to it. */
+.range-tick {
+  display: inline-block;
+  width: 2px;
+  height: 0.75rem;
+  background: var(--ink);
+}
+
+.range-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 6px;
+}
+
+.range-average {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ink);
+}
+
+.range-dot {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border: 2px solid var(--card);
+  border-radius: 50%;
+}
+
+.card-focus {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+  transition: outline-color 400ms ease;
+}
+
+/* --- previews and the chart page -------------------------------------------- */
+
+.card {
+  position: relative;
+}
+
+/* Previews fill every row: three across on a wide page, two on a medium one,
+   one on a phone. Rows are cut from a six-column grid, so when the cards do
+   not divide by three the last ones widen instead of leaving a card alone:
+   a remainder of one makes the last four two-and-two, a remainder of two
+   makes the last two half-width each. On two columns an odd last card spans
+   the row. Previews are all one size; "wide" applies on the chart page. */
+.dashboard {
+  container-type: inline-size;
+}
+
+.cards.preview {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cards.preview > .card {
+  grid-column: auto;
+}
+
+@container (min-width: 640px) {
+  .cards.preview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 640px) and (max-width: 999.98px) {
+  .cards.preview:has(> :last-child:nth-child(odd)) > .card:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@container (min-width: 1000px) {
+  .cards.preview {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .cards.preview > .card {
+    grid-column: span 2;
+  }
+
+  .cards.preview:has(> :last-child:nth-child(3n + 4)) > .card:nth-last-child(-n + 4),
+  .cards.preview:has(> :last-child:nth-child(3n + 2)) > .card:nth-last-child(-n + 2) {
+    grid-column: span 3;
+  }
+
+  .cards.preview > .card:only-child {
+    grid-column: 1 / -1;
+  }
+}
+
+.cards.detail {
+  grid-template-columns: 1fr;
+}
+
+.cards:empty::after {
+  content: attr(data-empty-text);
+  color: var(--ink-soft);
+  padding: 2rem 0;
+}
+
+.card.preview {
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.card.preview:hover,
+.card.preview:has(.card-open.Mui-focusVisible) {
+  border-color: var(--ink-soft);
+  box-shadow: 0 1px 6px rgba(15, 28, 35, 0.08);
+}
+
+.card-open.MuiButtonBase-root {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
 }

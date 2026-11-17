@@ -32,6 +32,11 @@ follows as a result.
   [open decision](decisions.md#open-decisions), due before production cutover or
   before stored history outgrows what Google serves.
 - **Plain Postgres.** At one person's volume, TimescaleDB earns nothing yet.
+- **nivo for charts, MUI for controls.** nivo covers every chart form the
+  dashboard needs — lines, bars, heatmap, calendar, swarm, scatter — and takes
+  custom SVG layers for the rest. MUI supplies tabs, toggles, the date picker,
+  dialogs and tooltips, restyled through one theme to match the page. Library
+  components over hand-built ones, always restyled. See [Charting](charting.md).
 - **Synchronous, SQLModel-only.** SQLModel re-exports `create_engine`,
   `Session`, `select` and `text`, so a sync stack needs essentially no SQLAlchemy
   imports. It exposes no `create_async_engine`, so async would require reaching

@@ -60,7 +60,7 @@ workers, where retries are free.
 | Message queue | NATS JetStream, file storage, drained by a Prefect pull consumer |
 | Orchestration | Prefect 3, self-hosted; triggered over its REST API, never imported by the web process |
 | Flow code | `server/flows/`, `prefect` in its own dependency group |
-| Frontend | React |
+| Frontend | React, nivo for charts, MUI for controls — see [Charting](charting.md) |
 | Layout | Monorepo: `server/` + `client/`, separate deploy artifacts |
 | Config | `.env` |
 | Tests | pytest |
@@ -86,6 +86,8 @@ and the reasoning is what stops a settled question being reopened by accident.
 | [Testing](testing.md) | Writing tests, or building a fixture |
 | [Operations](operations.md) | Registering a subscriber, changing the public URL, or deploying |
 | [Decisions: open, deferred, rejected](decisions.md) | Before proposing anything — it records what is undecided and what was already turned down |
+| [Charting](charting.md) | Touching `client/`: a chart, a control, a colour, or how data is fetched and cached |
+| [Skills](skills.md) | Choosing or adding an agent skill, or when a skill's advice seems to contradict a decision here |
 
 ## Build order
 
@@ -147,7 +149,16 @@ Progress marker — tick a box only when the step is genuinely complete.
       rate, oxygen saturation, breathing, sleep, activity, exercise, nutrition,
       hydration and body, reading only `FITBIT` and `GOOGLE_HEALTH` sources.
       Verified by hand against the real database with a live session. 453 tests.
-- [ ] **8. React dashboard** — steps, sleep, heart rate
+- [ ] **8. React dashboard** — a home page of the day's key figures against
+      the past week, opening into every `/data/*` route grouped by type into
+      tabs as compact previews, each with a full chart page, over a day, a
+      week, a month, three months or a custom span. See [Charting](charting.md)
+- [ ] **8a. Hourly heart-rate summaries** — **next task.** A stored hourly
+      rollup per user (min, mean, max, count, and time in each zone),
+      written by the fetcher flow and the backfill, so 30- and 90-day views
+      read about 720 rows instead of a million decrypted samples. The day view
+      keeps reading raw samples. Needs a grilling round first. See
+      [Charting](charting.md#deferred) and [Decisions](decisions.md#deferred)
 - [ ] **9. Prefect schedule** — daily 7-day `:reconcile` flow + push alerting
       on token expiry
 - [ ] **10. Cutover to cloudflared** — subscriber PATCH to the self-hosted URL
