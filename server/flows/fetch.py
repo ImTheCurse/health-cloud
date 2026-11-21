@@ -15,6 +15,12 @@ message to exactly one consumer, so overlapping runs cannot double-process.
 committed, which is what makes at-least-once mean something. If anything fails,
 the message is left alone and the broker redelivers it.
 
+**A heart-rate message also needs its rollup run to exist.** Before a
+heart-rate or time-in-zone message is acknowledged, a ``rollup-heart-rate`` run
+for the hours it wrote must have been created in Prefect. The ack does not wait
+for that run to finish; Prefect retries it. If the run cannot be created, the
+message is redelivered and the whole unit, upsert included, repeats harmlessly.
+
 The flow is ``async`` because ``nats-py`` is, and it uses FastAPI's and Prefect's
 loop rather than opening one. The blocking half -- SQLModel and ``requests`` --
 goes to a worker thread as one unit per pointer, the same shape the webhook route
@@ -25,12 +31,17 @@ import asyncio
 from typing import Any
 
 import anyio.to_thread
-from prefect import flow, get_run_logger, task
+from loguru import logger as thread_logger
+from prefect import flow, get_run_logger, serve, task
+from prefect.deployments import arun_deployment
 
 from server.config.settings import get_settings
 from server.db.session import get_session
+from server.flows.rollup import rollup_heart_rate
 from server.health.error import TokenExpiredError
+from server.health.fetcher import FetchResult
 from server.observability.util import hashed_log_id
+from server.orchestration.const import ROLLUP_DEPLOYMENT, ROLLUP_DEPLOYMENT_NAME
 from server.providers import build_fetcher, build_user_repository
 from server.queue.consumer import NotificationConsumer
 from server.queue.error import DrainAborted
@@ -71,7 +82,7 @@ async def fetch_pointer(payload: dict[str, Any]) -> str:
     )
 
     try:
-        result = await anyio.to_thread.run_sync(lambda: _fetch_blocking(payload))
+        results = await anyio.to_thread.run_sync(lambda: _fetch_blocking(payload))
     except TokenExpiredError as error:
         logger.error(
             "fetch failed for %s (user %s): TokenExpiredError", data_type, user
@@ -90,11 +101,71 @@ async def fetch_pointer(payload: dict[str, Any]) -> str:
         )
         raise
 
+    result = "; ".join(str(found) for found in results) or "nothing to fetch"
     logger.info("fetched %s (user %s): %s", data_type, user, result)
+
+    try:
+        run_id = await request_rollup(payload, results)
+    except Exception as error:
+        logger.error(
+            "rollup run not created for %s (user %s): %s",
+            data_type,
+            user,
+            type(error).__name__,
+        )
+        raise
+    if run_id is not None:
+        logger.info("requested rollup run %s (user %s)", run_id, user)
     return result
 
 
-def _fetch_blocking(payload: dict[str, Any]) -> str:
+async def request_rollup(
+    payload: dict[str, Any], results: list[FetchResult]
+) -> str | None:
+    """Create a rollup run for the hours ``results`` wrote, if any.
+
+    Returns the run's id once Prefect has created it, without waiting for it to
+    finish, or ``None`` when nothing was written that the summaries are built
+    from. Raises if the run could not be created, so the message stays
+    unacknowledged.
+
+    The idempotency key names the delivery and the hours, so a redelivered
+    message does not start a second run, while a later notification for the
+    same hours does start one.
+    """
+    spans = [found.hours for found in results if found.hours is not None]
+    if not spans:
+        return None
+    span = spans[0]
+    for other in spans[1:]:
+        span = span.union(other)
+
+    pointer = payload["pointer"]
+    health_user_id = pointer["healthUserId"]
+    key = ":".join(
+        [
+            "fetch",
+            str(payload.get("notification_id")),
+            str(pointer.get("dataType")),
+            span.start.isoformat(),
+            span.end.isoformat(),
+        ]
+    )
+    run = await arun_deployment(
+        ROLLUP_DEPLOYMENT,
+        parameters={
+            "health_user_id": health_user_id,
+            "start": span.start.isoformat(),
+            "end": span.end.isoformat(),
+        },
+        timeout=0,
+        idempotency_key=key,
+        as_subflow=False,
+    )
+    return str(run.id)
+
+
+def _fetch_blocking(payload: dict[str, Any]) -> list[FetchResult]:
     """The synchronous unit: one session, one pointer, one commit.
 
     Everything blocking happens here, in one thread hop rather than several: a
@@ -111,10 +182,12 @@ def _fetch_blocking(payload: dict[str, Any]) -> str:
             # Not an error worth retrying: a notification for a user we have no
             # consent for cannot be acted on, and the row will not appear by
             # being asked again.
-            return f"no consented user for {hashed_log_id(health_user_id)}"
+            thread_logger.info(
+                "no consented user for {}", hashed_log_id(health_user_id)
+            )
+            return []
 
-        results = build_fetcher(session).fetch_pointer(user, pointer)
-        return "; ".join(str(result) for result in results) or "nothing to fetch"
+        return build_fetcher(session).fetch_pointer(user, pointer)
 
 
 @flow(name="fetch-notifications", log_prints=True)
@@ -152,17 +225,23 @@ async def _handle(payload: dict[str, Any]) -> None:
 
 
 def deploy() -> None:
-    """Register the deployment and serve it.
+    """Register both deployments and serve them.
 
     ``serve()`` rather than a work pool and a separate worker: this is a
     single-user deployment, and a work pool adds a second process and a second
     state machine to manage for no benefit at this size. The process this starts
     both registers the deployment and executes its runs.
 
-    It prints the deployment id, which belongs in ``PREFECT_DEPLOYMENT_ID`` so
-    the receiver can ring the doorbell.
+    It prints the fetcher deployment's id, which belongs in
+    ``PREFECT_DEPLOYMENT_ID`` so the receiver can ring the doorbell. The rollup
+    deployment is found by name, so it needs no setting.
     """
-    fetch_notifications.serve(name="fetcher")
+    # to_deployment returns a coroutine only when called from async code; here
+    # it is synchronous, which its signature cannot express.
+    serve(
+        fetch_notifications.to_deployment(name="fetcher"),  # type: ignore[arg-type]
+        rollup_heart_rate.to_deployment(name=ROLLUP_DEPLOYMENT_NAME),  # type: ignore[arg-type]
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover -- an operator entry point

@@ -15,6 +15,7 @@ from server.aggregation.const import (
     MAX_DAYS,
     MAX_RANGE_DAYS,
     MILLIMETERS_PER_METER,
+    ROLLED_UP_RESOLUTIONS,
     Resolution,
 )
 from server.aggregation.logs import (
@@ -106,10 +107,15 @@ def heart_rate(
     end: End,
     resolution: Bucket = Resolution.DAY,
 ) -> StatSeries:
+    """Hourly and daily buckets come from the stored hourly summaries."""
     checked_range(start, end, MAX_DAYS[resolution])
-    buckets = SeriesAggregator(reader).stats(
-        ObservationSampleTime, "heart-rate", start, end, resolution
-    )
+    aggregator = SeriesAggregator(reader)
+    if resolution in ROLLED_UP_RESOLUTIONS:
+        buckets = aggregator.heart_rate_stats(start, end, resolution)
+    else:
+        buckets = aggregator.stats(
+            ObservationSampleTime, "heart-rate", start, end, resolution
+        )
     record(log, reader, "heart-rate", start, end)
     return StatSeries(
         data_type="heart-rate", unit="bpm", resolution=resolution, buckets=buckets
@@ -150,6 +156,19 @@ def time_in_heart_rate_zone(
     end: End,
     resolution: Bucket = Resolution.DAY,
 ) -> CategorySeries:
+    """Hourly and daily buckets come from the stored hourly summaries."""
+    if resolution in ROLLED_UP_RESOLUTIONS:
+        checked_range(start, end, MAX_DAYS[resolution])
+        buckets = SeriesAggregator(reader).heart_rate_zone_totals(
+            start, end, resolution
+        )
+        record(log, reader, "time-in-heart-rate-zone", start, end)
+        return CategorySeries(
+            data_type="time-in-heart-rate-zone",
+            unit="minutes",
+            resolution=resolution,
+            buckets=buckets,
+        )
     return _categories(
         reader,
         log,

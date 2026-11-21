@@ -7,6 +7,10 @@ the app does at startup: it runs Google's verification handshake against the
 live endpoint, and a restart quietly repointing or breaking the production
 subscriber would be worse than an explicit action with visible output.
 
+``rollup rebuild`` rewrites the hourly heart-rate summaries from the samples
+already stored, in this process. It is how existing history gets summaries, and
+the manual fix for hours a failed rollup run left stale.
+
 ``db reset-measurements`` drops and recreates the measurement tables, which is
 how their schema changes without migrations. It cannot reach ``users``: the
 refresh token lives there, and losing it means re-consenting.
@@ -37,8 +41,14 @@ from server.models.datapoint import (
     UnknownDataPoint,
 )
 from server.models.notification import RawNotification
+from server.models.rollup import HeartRateHour
 from server.models.user import User
+from server.orchestration.client import FlowTrigger
+from server.orchestration.const import ROLLUP_DEPLOYMENT
+from server.orchestration.error import TriggerError
 from server.providers import build_fetcher, build_user_repository
+from server.rollup.const import MAX_UTC_OFFSET, ROLLED_UP_TYPES
+from server.rollup.hours import HeartRateHours, HourSpan
 from server.webhooks.const import (
     DATA_TYPES,
     SYSTEM_EVENTS,
@@ -135,6 +145,7 @@ def db_reset_measurements(args: argparse.Namespace) -> None:
         SessionTimeInterval,
         SessionSegment,
         UnknownDataPoint,
+        HeartRateHour,
     ]
     if args.include_audit:
         models.append(RawNotification)
@@ -181,6 +192,62 @@ def backfill_run(args: argparse.Namespace) -> None:
                 _backfill_by_day(fetcher, user, data_type, start, end)
             else:
                 _backfill_in_one_pass(fetcher, user, data_type, start, end)
+        health_user_id = user.health_user_id
+
+    if ROLLED_UP_TYPES & set(types):
+        _request_rollup(health_user_id, start, end)
+
+
+def _request_rollup(health_user_id: str, start: dt.datetime, end: dt.datetime) -> None:
+    """Start a rollup run over every local hour the backfilled window can touch.
+
+    The window is in UTC and the hours are local, so it is widened by the
+    largest UTC offset either way. Hours with nothing in them are rebuilt as
+    empty, which costs a query and changes nothing.
+    """
+    span = HourSpan.around(
+        (start - MAX_UTC_OFFSET).replace(tzinfo=None),
+        (end + MAX_UTC_OFFSET).replace(tzinfo=None),
+    )
+    try:
+        trigger = FlowTrigger.by_name(get_settings().prefect_api_url, ROLLUP_DEPLOYMENT)
+        run_id = trigger.trigger(
+            {
+                "health_user_id": health_user_id,
+                "start": span.start.isoformat(),
+                "end": span.end.isoformat(),
+            }
+        )
+    except TriggerError as error:
+        days = (end - start).days + 2
+        raise HealthApiError(
+            f"the heart-rate rollup was not started ({error}); "
+            f"rebuild by hand with: rollup rebuild --days {days}"
+        ) from error
+    print(f"requested a heart-rate rollup run {run_id or ''}".rstrip(), flush=True)
+
+
+def rollup_rebuild(args: argparse.Namespace) -> None:
+    """Rebuild the hourly heart-rate summaries from the stored samples.
+
+    Covers the last ``--days`` local days up to the end of tomorrow, so the
+    current hour is included wherever the user's clock is. Committed a day at a
+    time, so an interrupted rebuild keeps the days it finished.
+    """
+    today = dt.date.today()
+    start = dt.datetime.combine(today - dt.timedelta(days=args.days), dt.time())
+    end = dt.datetime.combine(today + dt.timedelta(days=2), dt.time())
+
+    def report(chunk: HourSpan, written: int) -> None:
+        print(f"  {chunk.start.date()}: {written} hour(s)", flush=True)
+
+    with get_session() as session:
+        user = _only_user(args.user, session)
+        print(f"rebuilding heart-rate hours from {start.date()} to {end.date()}")
+        written = HeartRateHours(session).rebuild_in_chunks(
+            user.health_user_id, HourSpan(start, end), on_chunk=report
+        )
+    print(f"rebuilt {written} hour(s)")
 
 
 def _backfill_by_day(
@@ -362,6 +429,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     running.add_argument("--user", help="health user id (default: the only one)")
     running.set_defaults(handler=backfill_run)
+
+    rollup = groups.add_parser("rollup", help="manage the stored summaries")
+    rollup_commands = rollup.add_subparsers(dest="command", required=True)
+    rebuilding = rollup_commands.add_parser(
+        "rebuild", help="rebuild the hourly heart-rate summaries from stored samples"
+    )
+    rebuilding.add_argument(
+        "--days",
+        type=int,
+        default=BACKFILL_DAYS,
+        help=f"how many past days to rebuild (default {BACKFILL_DAYS})",
+    )
+    rebuilding.add_argument("--user", help="health user id (default: the only one)")
+    rebuilding.set_defaults(handler=rollup_rebuild)
 
     return parser
 

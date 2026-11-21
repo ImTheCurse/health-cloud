@@ -95,9 +95,10 @@ server/              FastAPI backend, imported as server.<module>
   webhooks/          signature verification and payload parsing
   queue/             NATS JetStream publishing and consuming
   health/            Google Health API client
-  flows/             Prefect fetcher flow
+  flows/             Prefect fetcher and heart-rate rollup flows
+  rollup/            hourly heart-rate summaries: rebuilding and reading
   aggregation/       bucketing and summaries for the read API
-  cli.py             subscriber, database and backfill commands
+  cli.py             subscriber, database, backfill and rollup commands
 client/              React dashboard (Vite)
 tests/               pytest suite, mirroring server/
 docs/                design documents
@@ -159,8 +160,10 @@ In a separate terminal, run and leave running:
 uv run --group prefect python -m server.flows.fetch deploy
 ```
 
-This registers the `fetcher` deployment and serves its runs. Put the deployment
-ID it prints into `PREFECT_DEPLOYMENT_ID` in `.env`, then restart the API.
+This registers the `fetcher` and `rollup-heart-rate/rollup` deployments and
+serves their runs. Put the fetcher's deployment ID it prints into
+`PREFECT_DEPLOYMENT_ID` in `.env`, then restart the API. The rollup deployment
+is found by name and needs no setting.
 
 To drain the queue once without serving a deployment:
 
@@ -203,6 +206,9 @@ uv run python -m server.cli backfill run --types steps sleep heart-rate --days 7
 
 Data type ids are kebab-case (`heart-rate`, not `heart_rate`). Heart rate is
 about 34,000 points a day, and the Health API keeps only about a week of it.
+A backfill that includes heart rate ends by starting a rollup run, which
+rebuilds the hourly summaries the long heart-rate charts read; it needs the
+Prefect deployments served.
 
 ## Development
 
@@ -220,6 +226,7 @@ Other commands:
 
 ```bash
 uv run python -m server.cli db reset-measurements   # drop and recreate the measurement tables; users are kept
+uv run python -m server.cli rollup rebuild --days 120   # rebuild the hourly heart-rate summaries from stored samples
 ```
 
 ## Security

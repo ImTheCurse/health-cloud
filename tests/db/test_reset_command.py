@@ -37,6 +37,7 @@ def test_force_drops_every_measurement_table(dropped):
     run("--force")
 
     assert sorted(dropped[0]) == [
+        "heart_rate_hours",
         "observation_sample_times",
         "observation_time_intervals",
         "session_segments",

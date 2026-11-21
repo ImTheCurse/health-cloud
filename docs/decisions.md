@@ -56,10 +56,12 @@ user, rather than assuming.
 - **Filter fields for more types.** Only five types have a verified filter
   field. Probing the others would let them be fetched a day at a time, which is
   cheaper still than one backward pass
-- **Reading 90 days of heart-rate quickly.** A full-resolution heart-rate
-  backfill is about 35,000 rows a day, and the read API decrypts and aggregates
-  in Python, so a 30- or 90-day chart reads a million rows or more. Stored
-  hourly rollups would fix it without discarding the samples
+- **Alerting on a crashed rollup run.** A `rollup-heart-rate` run that
+  Prefect marks *Crashed* (its worker died) is not retried, so its hours stay
+  stale until the step 9 rebuild or a manual `rollup rebuild`. A notification
+  on crashed and failed runs belongs with step 9's push alerting; a Prefect
+  automation that reruns them is the other option, and adds setup outside the
+  repo
 - **Binding Postgres to `127.0.0.1`** and replacing the default password — it
   is published on every interface today. The user's own task
 - The ML layer over collected data — `raw_notifications` and the `raw` column

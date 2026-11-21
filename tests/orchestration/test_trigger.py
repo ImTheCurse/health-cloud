@@ -86,3 +86,44 @@ def test_a_trailing_slash_on_the_api_url_does_not_double_up():
     ).trigger()
 
     assert "//deployments" not in transport.requests[0]["url"]
+
+
+# --- the backfill's rollup run, which does carry its input ---
+
+
+def test_a_run_can_carry_parameters():
+    transport = FakeTransport()
+
+    trigger_with(transport).trigger({"health_user_id": "u", "start": "s"})
+
+    assert transport.requests[0]["json"] == {
+        "parameters": {"health_user_id": "u", "start": "s"}
+    }
+
+
+def test_a_deployment_is_found_by_name():
+    transport = FakeTransport([FakeResponse(200, {"id": DEPLOYMENT})])
+
+    trigger = FlowTrigger.by_name(
+        "http://prefect:4200/api",
+        "rollup-heart-rate/rollup",
+        session=transport,  # type: ignore[arg-type]
+    )
+    trigger.trigger()
+
+    lookup, created = transport.requests
+    assert lookup["url"] == (
+        "http://prefect:4200/api/deployments/name/rollup-heart-rate/rollup"
+    )
+    assert created["url"].endswith(f"/deployments/{DEPLOYMENT}/create_flow_run")
+
+
+def test_a_deployment_prefect_does_not_know_raises():
+    transport = FakeTransport([FakeResponse(404)])
+
+    with pytest.raises(TriggerError, match="404"):
+        FlowTrigger.by_name(
+            "http://prefect:4200/api",
+            "rollup-heart-rate/rollup",
+            session=transport,  # type: ignore[arg-type]
+        )

@@ -31,6 +31,8 @@ from server.models.const import GOOGLE_HEALTH_PLATFORM, TimeStructure
 from server.models.datapoint import DataPointBase, SessionTimeInterval, UnknownDataPoint
 from server.models.user import User
 from server.observability.util import hashed_log_id
+from server.rollup.const import ROLLED_UP_TYPES
+from server.rollup.hours import HourSpan
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,10 @@ class FetchResult:
     #: success: the notification was handled as well as it can be today, and the
     #: measurement was not collected.
     unsupported: bool = False
+    #: The local hours the written rows start in, for a type the hourly
+    #: heart-rate summaries are built from. ``None`` for any other type, or when
+    #: nothing was written.
+    hours: HourSpan | None = None
 
     def __str__(self) -> str:
         if self.unsupported:
@@ -195,6 +201,8 @@ class Fetcher:
         tombstone = fetched_at if deleted else None
 
         written = segments_written = skipped = 0
+        first_local: dt.datetime | None = None
+        last_local: dt.datetime | None = None
         pending: list[DataPointBase] = []
         current_day: dt.date | None = None
         day_written = 0
@@ -223,6 +231,12 @@ class Fetcher:
                 skipped += 1
                 continue
 
+            if data_type in ROLLED_UP_TYPES and row.local_start is not None:
+                if first_local is None or row.local_start < first_local:
+                    first_local = row.local_start
+                if last_local is None or row.local_start > last_local:
+                    last_local = row.local_start
+
             if on_day is not None:
                 day = _day_of(row)
                 if current_day is not None and day != current_day:
@@ -243,7 +257,12 @@ class Fetcher:
                 pending.clear()
 
         close_day()
-        return FetchResult(data_type, written, segments_written, skipped)
+        hours = (
+            HourSpan.around(first_local, last_local)
+            if first_local is not None and last_local is not None
+            else None
+        )
+        return FetchResult(data_type, written, segments_written, skipped, hours=hours)
 
     def _fetch_floor_days(
         self, user: User, start: dt.datetime, end: dt.datetime

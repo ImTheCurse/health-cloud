@@ -27,6 +27,7 @@ from server.health.credentials import AccessTokens
 from server.health.fetcher import Fetcher
 from server.orchestration.client import FlowTrigger
 from server.queue.publisher import NotificationPublisher
+from server.rollup.hours import HeartRateHours
 from server.webhooks.receiver import EndpointAuthorizer
 from server.webhooks.signature import SignatureVerifier
 from server.webhooks.util import authorization_value
@@ -127,7 +128,11 @@ def build_measurement_repository(session: Session) -> MeasurementRepository:
 
 def build_measurement_reader(session: Session, health_user_id: str) -> MeasurementReader:
     """One user's measurements, bound to one session. Not cached: per request."""
-    return MeasurementReader(build_measurement_repository(session), health_user_id)
+    return MeasurementReader(
+        build_measurement_repository(session),
+        health_user_id,
+        HeartRateHours(session),
+    )
 
 
 def build_fetcher(session: Session) -> Fetcher:

@@ -18,6 +18,8 @@ Tables:
 - `observation_time_intervals`, `observation_sample_times`,
   `session_time_intervals`, `session_segments`, `unknown_data_points` — the
   measurements. See *One table per shape* below.
+- `heart_rate_hours` — hourly heart-rate summaries, derived from the
+  measurements. See *Stored summaries* below.
 
 ### One table per shape, not per data type
 
@@ -146,6 +148,36 @@ genuine correction to the same interval are indistinguishable by payload hash,
 so hashing would silently drop real edits. This is why JetStream's `Nats-Msg-Id`
 deduplication is left switched off: a broker that offers the trap for free is
 still offering the trap.
+
+### Stored summaries
+
+`heart_rate_hours` holds one row per user, source platform and **local hour**,
+so hourly and daily heart-rate charts read about 24 rows a day instead of about
+35,000 decrypted samples. The day view, at buckets finer than an hour, still
+reads samples.
+
+- **What a row holds:** `count`, `sum`, `min` and `max` of the hour's
+  `heart-rate` samples, and `zone_minutes`, the minutes per zone from Google's
+  own `time-in-heart-rate-zone` windows. Zone time is Google's figure, not one
+  recomputed from samples against the zone limits, so the chart's numbers are
+  Google's. Sum and count, not a mean, so hours and sources combine into an
+  exact daily mean.
+- **Keyed on the hour a row starts in.** A sample or a zone window counts in
+  the hour its `local_start` falls in, the same rule chart buckets use, and is
+  never split across hours.
+- **Encrypted.** The four figures and the zone minutes are one encrypted JSON
+  `summary`, so a row costs one decryption. User, platform, `hour_start` and
+  `civil_date` are plaintext structure; reads filter on platform like every
+  other read.
+- **Rebuilt, never adjusted.** An hour is recomputed from every live sample and
+  window in it and replaces the old row; an hour left with nothing is deleted.
+  A repeat rebuild changes nothing, a correction is picked up by rebuilding its
+  hours, and a tombstoned sample drops out. A summary can always be thrown away
+  and rebuilt from the samples, which is how existing history is filled:
+  `rollup rebuild --days N`.
+- **Who rebuilds it:** the `rollup-heart-rate` flow, started for the hours each
+  heart-rate or time-in-zone write touched. See
+  [Orchestration](orchestration.md#the-rollup-flow).
 
 ### Deletions
 

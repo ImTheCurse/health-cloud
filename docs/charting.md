@@ -84,9 +84,8 @@ groups, activity first:
   caption giving the range in figures. The dot is in the tile's colour inside
   the range, and blue or orange outside it by which side is usually better. The
   six overnight tiles read 30 days of their daily routes for it. The heart-rate
-  average reads the earlier days in a second, daily-bucket request, since they
-  are a month of raw samples until step 8a: its figure shows first and its
-  range when that lands. A tile with under 14 days of history shows the past
+  average reads the earlier days in a second, daily-bucket request, served from
+  the stored hourly summaries. A tile with under 14 days of history shows the past
   week's lowest to highest in grey instead.
 - **Layout:** column counts that divide each group evenly, so no row ends on a
   lone tile: the four Activity tiles in one row, the six Recovery tiles three by
@@ -100,9 +99,8 @@ groups, activity first:
 - Each tile has its **own loading, empty ("No data yet") and error state.**
 - **Data** comes from the existing routes over the day and the seven before it;
   the Activity tiles and heart-rate average read hourly buckets so the last 24
-  hours can be cut from them. The heart-rate average reads about eight days of
-  raw samples, so it arrives last; the hourly summaries of step 8a make it
-  cheap.
+  hours can be cut from them. The heart-rate average reads the stored hourly
+  summaries, about 200 rows for the eight days.
 
 ## Previews and the chart page
 
@@ -151,7 +149,7 @@ The view lives in the query string (`group`, `chart`, `span`, `day`, `from`,
 
 - **Span:** Day / Week / Month / 3 months, the last 1, 7, 30 or 90 days **ending
   on the chosen day**, or **Custom**: a From and a To date picker, at most 90
-  days apart, so the raw-sample routes stay bounded until step 8a. `end` is sent
+  days apart, so the raw-sample routes stay bounded. `end` is sent
   as the day after the last one shown, because the API excludes it.
 - **The chosen day** moves with the ‹ › arrows, by the span's length, or with
   the date picker. Clicking a day on any chart switches to Day on that date.
@@ -326,11 +324,12 @@ Colours live in `client/src/dashboard/theme.js`.
   charts, to show how a day compares with what was expected. Nothing is built
   for it; with nivo it is a series or a custom layer added later. See
   [Decisions](decisions.md#deferred).
-- **Hourly heart-rate summaries** so long ranges stop reading raw samples:
-  the next task, step 8a in [the build order](CONTEXT.md#build-order). Until
-  then, raw heart rate, time in zone, HRV and SpO₂ samples, activity level and
-  zone minutes are never preloaded, and the raw heart-rate chart has no
-  personal range, because each would read hundreds of thousands of rows.
+- **Stored summaries for the other raw-sample routes.** HRV and SpO₂
+  samples, activity level and zone minutes still read raw rows, so they are
+  never preloaded: each would read hundreds of thousands of rows. Heart rate and
+  time in zone read stored hourly summaries at hourly and daily buckets (see
+  [Data model](data-model.md#stored-summaries)), so they preload, and the heart
+  rate chart has a personal range.
 - **A table view per chart,** for reading exact values without hovering.
 - **Splitting the bundle per tab.** nivo and MUI make the production bundle
   about 1.1 MB (350 KB gzipped). Fine for one self-hosted user; split if it
