@@ -38,6 +38,9 @@ MAX_DAYS: Final[dict[Resolution, int]] = {
     Resolution.DAY: 366,
 }
 
+#: Resolutions the hourly summaries can serve. Anything finer reads samples.
+ROLLED_UP_RESOLUTIONS: Final = frozenset({Resolution.HOUR, Resolution.DAY})
+
 #: The longest range for a route with no resolution: one entry per day or less.
 MAX_RANGE_DAYS: Final = 366
 

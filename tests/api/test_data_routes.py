@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from server.aggregation.const import MAX_DAYS, MAX_RANGE_DAYS, Resolution
 from server.api.data import get_reader
 from server.main import app
-from tests.aggregation.fakes import reader_over, row
+from tests.aggregation.fakes import reader_over, row, stored_hour
 from tests.conftest import logged_text
 
 ROUTES = [
@@ -119,7 +119,7 @@ def test_steps_come_back_as_a_typed_series(serve):
 
 
 def test_a_read_is_logged_without_its_values(serve, logs):
-    client = serve(heart_rate=[row(dt.datetime(2026, 10, 30, 9), numeric=987654)])
+    client = serve(hours=[stored_hour(dt.datetime(2026, 10, 30, 9), [987654])])
 
     client.get("/data/heart-rate", params={"start": "2026-10-30", "end": "2026-10-31"})
 
@@ -127,3 +127,35 @@ def test_a_read_is_logged_without_its_values(serve, logs):
     rendered = logged_text(logs)
     assert "measurements_read" in rendered
     assert "987654" not in rendered
+
+
+@pytest.mark.parametrize(
+    ("path", "resolution", "from_hours"),
+    [
+        ("/data/heart-rate", "1d", True),
+        ("/data/heart-rate", "1h", True),
+        ("/data/heart-rate", "1m", False),
+        ("/data/heart-rate/time-in-zone", "1d", True),
+        ("/data/heart-rate/time-in-zone", "1h", True),
+        ("/data/heart-rate/time-in-zone", "30m", False),
+    ],
+)
+def test_hourly_and_daily_heart_rate_read_the_stored_hours(
+    serve, path, resolution, from_hours
+):
+    """Hours serve hourly and daily buckets; anything finer reads samples."""
+    nine = dt.datetime(2026, 10, 30, 9)
+    client = serve(
+        hours=[stored_hour(nine, [70], {"PEAK": 5})],
+        heart_rate=[row(nine, numeric=90)],
+        time_in_heart_rate_zone=[row(nine, minutes=7, value={"heartRateZoneType": "PEAK"})],
+    )
+
+    buckets = client.get(
+        path, params={"start": "2026-10-30", "end": "2026-10-31", "resolution": resolution}
+    ).json()["buckets"]
+
+    if path == "/data/heart-rate":
+        assert buckets[0]["avg"] == (70 if from_hours else 90)
+    else:
+        assert buckets[0]["totals"]["PEAK"] == (5 if from_hours else 7)

@@ -40,6 +40,7 @@ from server.models.datapoint import (
     UnknownDataPoint,
 )
 from server.models.notification import RawNotification
+from server.rollup.hours import HeartRateHours, HourSpan
 from tests.google_webhook import BATCHED_NOTIFICATION
 
 USER = "1234567890123456789"
@@ -47,7 +48,14 @@ NOW = dt.datetime(2026, 9, 28, 12, 0, tzinfo=dt.UTC)
 DAY = dt.date(2026, 9, 27)
 
 #: Strings that only a decrypted value contains. Each is written somewhere below.
-SECRETS = ("beatsPerMinute", "7243", "DEEP", "minutesToFallAsleep", "restingBpm")
+SECRETS = (
+    "beatsPerMinute",
+    "7243",
+    "DEEP",
+    "minutesToFallAsleep",
+    "restingBpm",
+    "zone_minutes",
+)
 
 #: Every notification fixture in ``tests.google_webhook`` carries two pointers.
 BATCHED_POINTERS = 2
@@ -92,6 +100,15 @@ SEGMENT_PLAINTEXT = {
 }
 NOTIFICATION_ENCRYPTED = {"body": True}
 NOTIFICATION_PLAINTEXT = {"id", "received_at", "request_id", "pointer_count"}
+HOURS_ENCRYPTED = {"summary": True}
+HOURS_PLAINTEXT = {
+    "id",
+    "health_user_id",
+    "source_platform",
+    "hour_start",
+    "civil_date",
+    "built_at",
+}
 
 
 @dataclass(frozen=True)
@@ -111,6 +128,7 @@ INVENTORY = [
     ],
     TableColumns("session_segments", SEGMENT_ENCRYPTED, SEGMENT_PLAINTEXT),
     TableColumns("raw_notifications", NOTIFICATION_ENCRYPTED, NOTIFICATION_PLAINTEXT),
+    TableColumns("heart_rate_hours", HOURS_ENCRYPTED, HOURS_PLAINTEXT),
 ]
 
 per_table = pytest.mark.parametrize(
@@ -146,6 +164,8 @@ def written(session):
             ),
             ObservationSampleTime(
                 **common(data_type="heart-rate", record_id="h1"),
+                source_platform="FITBIT",
+                local_start=dt.datetime(2026, 9, 27, 9, 0),
                 value_numeric=Decimal(72),
                 value_unit="bpm",
                 value={"beatsPerMinute": 72},
@@ -186,6 +206,9 @@ def written(session):
             body=json.loads(BATCHED_NOTIFICATION) + [{"beatsPerMinute": 72}],
             pointer_count=BATCHED_POINTERS,
         )
+    )
+    HeartRateHours(session).rebuild(
+        USER, HourSpan(dt.datetime(2026, 9, 27), dt.datetime(2026, 9, 28))
     )
     session.commit()
     return session

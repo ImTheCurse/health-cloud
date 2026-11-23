@@ -149,18 +149,35 @@ Progress marker — tick a box only when the step is genuinely complete.
       rate, oxygen saturation, breathing, sleep, activity, exercise, nutrition,
       hydration and body, reading only `FITBIT` and `GOOGLE_HEALTH` sources.
       Verified by hand against the real database with a live session. 453 tests.
-- [ ] **8. React dashboard** — a home page of the day's key figures against
+- [x] **8. React dashboard** — a home page of the day's key figures against
       the past week, opening into every `/data/*` route grouped by type into
       tabs as compact previews, each with a full chart page, over a day, a
       week, a month, three months or a custom span. See [Charting](charting.md)
-- [ ] **8a. Hourly heart-rate summaries** — **next task.** A stored hourly
+      — *done 2026-11-17.* Seven tabs (heart, breathing, sleep, activity,
+      running, exercise, food and body) over nivo charts and MUI controls, with
+      the view held in the URL. Tabs other than the open one preload two at a
+      time once it has its data, never the raw-sample routes, and the API runs
+      with three workers so one long read does not block the rest. Spans over
+      seven days are bucketed daily.
+- [x] **8a. Hourly heart-rate summaries** — a stored hourly
       rollup per user (min, mean, max, count, and time in each zone),
       written by the fetcher flow and the backfill, so 30- and 90-day views
       read about 720 rows instead of a million decrypted samples. The day view
-      keeps reading raw samples. Needs a grilling round first. See
-      [Charting](charting.md#deferred) and [Decisions](decisions.md#deferred)
-- [ ] **9. Prefect schedule** — daily 7-day `:reconcile` flow + push alerting
-      on token expiry
+      keeps reading raw samples. See
+      [Data model](data-model.md#stored-summaries) and
+      [Orchestration](orchestration.md#the-rollup-flow)
+      — *done 2026-11-21.* `heart_rate_hours` holds one encrypted summary per
+      user, source and local hour, rebuilt by the `rollup-heart-rate` flow. A
+      heart-rate message is acked only once its rollup run exists in Prefect.
+      History was filled with `rollup rebuild --days 130`: 1,361 hours. Checked
+      against the real database: every hour matches its 699,555 samples and
+      78,473 time-in-zone windows, and chart buckets from the summaries equal
+      those from samples. A 90-day read went from 664,358 rows in 27 s to 1,336
+      in 0.07 s. A backfill's rollup run was seen completing in Prefect. 501
+      tests.
+- [ ] **9. Prefect schedule** — **next task.** Daily 7-day `:reconcile`
+      flow that also rebuilds the last 7 days of hourly heart-rate summaries,
+      + push alerting on token expiry and on failed or crashed rollup runs
 - [ ] **10. Cutover to cloudflared** — subscriber PATCH to the self-hosted URL
 
 Step 3 precedes step 4 deliberately: verification logic is tested against

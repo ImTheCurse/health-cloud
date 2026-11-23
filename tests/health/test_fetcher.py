@@ -668,3 +668,54 @@ def test_a_backfill_of_an_unreadable_type_does_nothing(captured_upserts):
 
     assert result.unsupported
     assert tokens.calls == 0
+
+
+# --- the hours the heart-rate summaries must rebuild ---
+
+
+def test_a_rolled_up_type_reports_the_local_hours_it_wrote(captured_upserts):
+    """The rollup run needs to know which hours to rebuild, on the user's clock:
+    the point starts at 09:00 UTC with a -4h offset, so 05:00 local."""
+    fetcher, _, _ = fetcher_over(
+        FakeTransport([page([interval_point(data_type="time-in-heart-rate-zone")])])
+    )
+
+    result = fetcher.fetch_interval(
+        user=a_user(),
+        data_type="time-in-heart-rate-zone",
+        start=dt.datetime(2026, 1, 2, tzinfo=dt.UTC),
+        end=dt.datetime(2026, 1, 3, tzinfo=dt.UTC),
+    )
+
+    assert result.hours is not None
+    assert (result.hours.start, result.hours.end) == (
+        dt.datetime(2026, 1, 2, 5),
+        dt.datetime(2026, 1, 2, 6),
+    )
+
+
+def test_any_other_type_reports_no_hours(captured_upserts):
+    fetcher, _, _ = fetcher_over(FakeTransport([page([interval_point()])]))
+
+    result = fetcher.fetch_interval(
+        user=a_user(),
+        data_type="steps",
+        start=dt.datetime(2026, 1, 2, tzinfo=dt.UTC),
+        end=dt.datetime(2026, 1, 3, tzinfo=dt.UTC),
+    )
+
+    assert result.written == 1
+    assert result.hours is None
+
+
+def test_nothing_written_reports_no_hours(captured_upserts):
+    fetcher, _, _ = fetcher_over(FakeTransport([page([])]))
+
+    result = fetcher.fetch_interval(
+        user=a_user(),
+        data_type="heart-rate",
+        start=dt.datetime(2026, 1, 2, tzinfo=dt.UTC),
+        end=dt.datetime(2026, 1, 3, tzinfo=dt.UTC),
+    )
+
+    assert result.hours is None

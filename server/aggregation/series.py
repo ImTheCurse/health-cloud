@@ -9,7 +9,12 @@ import datetime as dt
 from collections import defaultdict
 from collections.abc import Callable, Mapping
 
-from server.aggregation.const import AVERAGE_PLACES, READ_PLATFORMS, Resolution
+from server.aggregation.const import (
+    AVERAGE_PLACES,
+    READ_PLATFORMS,
+    ROLLED_UP_RESOLUTIONS,
+    Resolution,
+)
 from server.aggregation.schemas import (
     CategoryBucket,
     Number,
@@ -31,18 +36,34 @@ from server.aggregation.util import (
 )
 from server.db.measurements import Measurement, MeasurementRepository
 from server.models.datapoint import DataPointBase
+from server.rollup.hours import HeartRateHours, StoredHour
 
 
 class MeasurementReader:
     """One user's live, single-source measurements, counting what it reads.
 
-    Built per request: ``rows_read`` is what the request log reports.
+    Built per request: ``rows_read`` is what the request log reports, summary
+    rows included.
     """
 
-    def __init__(self, repository: MeasurementRepository, health_user_id: str) -> None:
+    def __init__(
+        self,
+        repository: MeasurementRepository,
+        health_user_id: str,
+        hours: HeartRateHours | None = None,
+    ) -> None:
         self._repository = repository
         self._health_user_id = health_user_id
+        self._hours = hours
         self.rows_read = 0
+
+    def heart_rate_hours(self, start: dt.date, end: dt.date) -> list[StoredHour]:
+        """The stored hourly heart-rate summaries with a civil date in the range."""
+        if self._hours is None:
+            raise RuntimeError("this reader was built without the hourly summaries")
+        rows = self._hours.read(self._health_user_id, start, end, READ_PLATFORMS)
+        self.rows_read += len(rows)
+        return rows
 
     def read(
         self,
@@ -153,6 +174,59 @@ class SeriesAggregator:
             for bucket, by in sorted(totals.items())
         ]
 
+    def heart_rate_stats(
+        self, start: dt.date, end: dt.date, resolution: Resolution
+    ) -> list[StatBucket]:
+        """``stats`` over the hourly summaries, for hourly or daily buckets.
+
+        Each source's hour is a separate row; rows that share a bucket combine
+        exactly, because each carries its sum and count rather than a mean.
+        """
+        _require_rolled_up(resolution)
+        grouped: dict[dt.datetime, list[dict[str, float]]] = defaultdict(list)
+        for hour in self._reader.heart_rate_hours(start, end):
+            if hour.summary.get("count"):
+                grouped[_hour_bucket(hour, resolution)].append(hour.summary)
+        buckets = []
+        for bucket, summaries in sorted(grouped.items()):
+            count = sum(int(found["count"]) for found in summaries)
+            total = sum(float(found["sum"]) for found in summaries)
+            buckets.append(
+                StatBucket(
+                    start=bucket,
+                    min=tidy(min(float(found["min"]) for found in summaries)),
+                    avg=round(total / count, AVERAGE_PLACES),
+                    max=tidy(max(float(found["max"]) for found in summaries)),
+                    count=count,
+                )
+            )
+        return buckets
+
+    def heart_rate_zone_totals(
+        self, start: dt.date, end: dt.date, resolution: Resolution
+    ) -> list[CategoryBucket]:
+        """``category_totals`` of time in zone, over the hourly summaries."""
+        _require_rolled_up(resolution)
+        totals: dict[dt.datetime, dict[str, float]] = defaultdict(
+            lambda: defaultdict(float)
+        )
+        for hour in self._reader.heart_rate_hours(start, end):
+            zones = hour.summary.get("zone_minutes") or {}
+            if not zones:
+                continue
+            bucket = totals[_hour_bucket(hour, resolution)]
+            for zone, minutes in zones.items():
+                bucket[zone] += float(minutes)
+        return [
+            CategoryBucket(
+                start=bucket,
+                totals={
+                    name: tidy(round(total, 2)) for name, total in sorted(by.items())
+                },
+            )
+            for bucket, by in sorted(totals.items())
+        ]
+
     def readings(
         self,
         table: type[DataPointBase],
@@ -230,3 +304,15 @@ class SeriesAggregator:
             )
             for day, found in sorted(periods.items())
         ]
+
+
+def _require_rolled_up(resolution: Resolution) -> None:
+    if resolution not in ROLLED_UP_RESOLUTIONS:
+        raise ValueError(f"the hourly summaries cannot serve {resolution} buckets")
+
+
+def _hour_bucket(hour: StoredHour, resolution: Resolution) -> dt.datetime:
+    """The bucket an hour's summary belongs to: itself, or its civil day."""
+    if resolution is Resolution.DAY:
+        return dt.datetime.combine(hour.civil_date, dt.time())
+    return hour.hour_start

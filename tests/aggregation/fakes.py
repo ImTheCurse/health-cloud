@@ -1,11 +1,13 @@
 """A read repository that serves rows from memory."""
 
 import datetime as dt
+from collections.abc import Sequence
 from decimal import Decimal
 from typing import Any
 
 from server.aggregation.series import MeasurementReader
 from server.db.measurements import Measurement
+from server.rollup.hours import StoredHour
 
 USER = "fake-health-user"
 
@@ -35,12 +37,47 @@ class FakeRepository:
         ]
 
 
+class FakeHours:
+    """Serves stored hourly summaries, honouring the date range like the real one.
+
+    Every hour is served whatever platforms are asked for: the real filter is
+    a ``WHERE`` clause, tested against Postgres.
+    """
+
+    def __init__(self, hours: list[StoredHour]) -> None:
+        self._hours = hours
+        self.calls: list[dict[str, Any]] = []
+
+    def read(self, health_user_id, start, end, platforms):
+        self.calls.append({"start": start, "end": end, "platforms": platforms})
+        return [hour for hour in self._hours if start <= hour.civil_date < end]
+
+
 def reader_over(
-    tables: dict[str, type] | None = None, **rows: list[Measurement]
+    tables: dict[str, type] | None = None,
+    hours: list[StoredHour] | None = None,
+    **rows: list[Measurement],
 ) -> MeasurementReader:
     by_type = {name.replace("_", "-"): found for name, found in rows.items()}
     repository = FakeRepository(by_type, tables)
-    return MeasurementReader(repository, USER)  # type: ignore[arg-type]
+    return MeasurementReader(repository, USER, FakeHours(hours or []))  # type: ignore[arg-type]
+
+
+def stored_hour(
+    hour_start: dt.datetime,
+    samples: Sequence[float] = (),
+    zone_minutes: dict[str, float] | None = None,
+) -> StoredHour:
+    """One hour's summary, as the rollup would have built it from ``samples``."""
+    summary: dict[str, Any] = {"zone_minutes": zone_minutes or {}}
+    if samples:
+        summary |= {
+            "count": len(samples),
+            "sum": float(sum(samples)),
+            "min": min(samples),
+            "max": max(samples),
+        }
+    return StoredHour(hour_start, hour_start.date(), summary)
 
 
 def row(

@@ -179,6 +179,41 @@ attached, and for the receiver those parameters are the delivery's health data.
 Failure paths therefore log `type(error).__name__`, never `str(error)`. Found by
 checking rather than by leaking, 2026-09-25, and covered by a test.
 
+### The rollup flow
+
+`rollup-heart-rate` rebuilds the [stored hourly heart-rate
+summaries](data-model.md#stored-summaries) for one user over a span of local
+hours, from the samples already in Postgres. It takes the user and the span as
+parameters, commits a day of hours at a time, and is served from the same
+process as the fetcher by `python -m server.flows.fetch deploy`, under the
+deployment `rollup-heart-rate/rollup`.
+
+**A heart-rate message is acked only once its rollup run exists.** When a
+`heart-rate` or `time-in-heart-rate-zone` message has been fetched and
+committed, the fetch task creates a rollup run for the local hours it wrote,
+with `run_deployment(timeout=0)`, and only then returns, which earns the ack.
+It waits for the run to be **created**, not to finish. If Prefect cannot be
+reached, the task raises, the message stays unacknowledged, and the redelivery
+repeats the upsert as a no-op and asks again. That is what makes the rollup
+durable without a table of pending hours.
+
+**The idempotency key** is the notification id, data type and span. A redelivered
+message gets back the run it already created; a later notification about the same
+hours has a new id, so its correction gets its own run.
+
+**Retried by Prefect, unlike the fetch.** Nothing redelivers a rollup run, so the
+flow has `retries=3`, a minute apart. A retry repeats a rebuild, which is
+harmless. A run Prefect marks *Crashed* is not retried; its hours stay stale until
+the step 9 rebuild or `rollup rebuild` (see
+[Decisions](decisions.md#deferred)).
+
+**The backfill starts one run when it finishes**, over every local hour its UTC
+window can touch (widened by 14 hours each way), through Prefect's REST API: the
+CLI, like the receiver, does not import `prefect`, and finds the deployment by
+name rather than by a setting. If the run cannot be created, the backfill exits
+with an error naming the `rollup rebuild` command that does the same work in
+process.
+
 **Not available self-hosted:** Prefect's HTTP *webhooks*, which turn an external
 request into a Prefect event, are a Cloud feature. Events and automations are in
 the open-source server; the webhook receiver is not. Nothing in this design needs

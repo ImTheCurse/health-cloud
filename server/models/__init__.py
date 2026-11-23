@@ -10,6 +10,7 @@ Every model must be imported here so ``SQLModel.metadata`` sees it before
 - ``session_time_intervals``      windows bundling metrics and sub-intervals
 - ``session_segments``            a session's sub-intervals: stages, laps, events
 - ``unknown_data_points``         anything whose time structure is unrecognised
+- ``heart_rate_hours``            hourly heart-rate summaries, rebuilt from samples
 
 The three measurement tables mirror Google's three time structures rather than
 its data type names; see ``server.models.datapoint``.
@@ -24,10 +25,12 @@ from server.models.datapoint import (
     UnknownDataPoint,
 )
 from server.models.notification import RawNotification
+from server.models.rollup import HeartRateHour
 from server.models.user import User
 
 __all__ = [
     "DataPointBase",
+    "HeartRateHour",
     "ObservationSampleTime",
     "ObservationTimeInterval",
     "RawNotification",

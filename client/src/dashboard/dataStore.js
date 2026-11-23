@@ -11,13 +11,20 @@ export const REFRESH_MS = 5 * 60 * 1000;
 // never preloaded: the server cannot drop a request the browser stops waiting
 // for, so preloading them piles work up behind whatever is on screen.
 const HEAVY = new Set([
-  "/heart-rate",
-  "/heart-rate/time-in-zone",
   "/heart-rate/variability",
   "/oxygen-saturation",
   "/activity/level",
   "/activity/zone-minutes",
 ]);
+// Routes the server answers from stored hourly summaries at these bucket sizes,
+// and from raw samples at any finer one.
+const SUMMARISED = new Set(["/heart-rate", "/heart-rate/time-in-zone"]);
+const SUMMARISED_RESOLUTIONS = new Set(["1h", "1d"]);
+
+function isHeavy(path, params) {
+  if (SUMMARISED.has(path)) return !SUMMARISED_RESOLUTIONS.has(params.resolution);
+  return HEAVY.has(path);
+}
 // Background requests at once, so a preload never competes hard with a tab.
 const BACKGROUND_AT_ONCE = 2;
 
@@ -111,7 +118,7 @@ export function load(path, params, { force = false, background = false } = {}) {
  */
 export function preload(requests) {
   queue = requests
-    .filter(([path, params]) => params && !HEAVY.has(path))
+    .filter(([path, params]) => params && !isHeavy(path, params))
     .filter(([path, params]) => {
       const entry = entries.get(keyOf(path, params));
       return !entry || (!entry.at && !entry.inflight);
