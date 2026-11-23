@@ -27,6 +27,21 @@ server.
   exercise, running, nutrition and body measurements, over a single day, a week,
   a month, three months or a custom range.
 
+## Screenshots
+
+The home page shows the day's key figures against the 7-day average and the
+usual range:
+
+![Home page of daily figures](docs/images/home.png)
+
+A single day of heart rate at five-minute resolution, over the heart-rate zones:
+
+![Heart rate over one day](docs/images/heart-rate-day.png)
+
+Resting heart rate over a month, against the personal range:
+
+![Resting heart rate over a month](docs/images/resting-heart-rate-month.png)
+
 ## Architecture
 
 ```mermaid
