@@ -40,7 +40,7 @@ Both halves of that are deliberate:
   pointer is handled twice, and it would put the work back into a fire-and-forget
   HTTP call — which is exactly why *Prefect as the queue* was rejected.
 
-A missed trigger therefore costs latency, not data; the step 9 sweep is what makes
+A missed trigger therefore costs latency, not data; the step 11 sweep is what makes
 swallowing it honest.
 
 **The receiver does not import `prefect`.** It calls
@@ -160,11 +160,18 @@ process and its **own** Postgres container run under `docker-compose.yml`,
 deliberately separate from the app's Postgres: Prefect runs Alembic migrations
 over its schema, and this project's stack table says *Migrations: None*. Letting
 another tool's migrations into the app's database would end the ability to
-reason about it. The fetcher is served separately with
-`uv run --group prefect python -m server.flows.fetch deploy`; Compose does not
-start it. Its printed deployment ID must be set as `PREFECT_DEPLOYMENT_ID` for
-the receiver to trigger runs (see the [README](../README.md)). The FastAPI app
-itself is still run by hand; containerising it belongs to step 10.
+reason about it. The Prefect images are pinned to the version `uv.lock` gives
+the worker, so a pull never runs Prefect's migrations unattended. The fetcher
+and rollup deployments are served by the `worker` container, running
+`python -m server.flows.fetch deploy` from its own image, the only one with
+`prefect` installed. See [Operations](operations.md#containers).
+
+**Deployments are found by name, never by id.** The receiver's doorbell looks
+up `fetch-notifications/fetcher` on its first ring and keeps the id, looking it
+up again if Prefect answers 404; the backfill finds `rollup-heart-rate/rollup`
+the same way. A fresh Prefect gets new ids when the worker first registers the
+deployments, so an id in `.env` would need copying across by hand after every
+first start.
 
 **Flow code lives in `server/flows/`.** The flows need `server.models`,
 `server.db` and `server.crypto`, so they share the package. The import direction
@@ -204,7 +211,7 @@ hours has a new id, so its correction gets its own run.
 **Retried by Prefect, unlike the fetch.** Nothing redelivers a rollup run, so the
 flow has `retries=3`, a minute apart. A retry repeats a rebuild, which is
 harmless. A run Prefect marks *Crashed* is not retried; its hours stay stale until
-the step 9 rebuild or `rollup rebuild` (see
+the step 11 rebuild or `rollup rebuild` (see
 [Decisions](decisions.md#deferred)).
 
 **The backfill starts one run when it finishes**, over every local hour its UTC

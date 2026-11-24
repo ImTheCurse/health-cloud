@@ -13,8 +13,8 @@ user, rather than assuming.
 | Decision | Needed by | Notes |
 | --- | --- | --- |
 | ~~Token encryption library~~ | ~~Step 2~~ | **Settled: not Tink.** `cryptography` AES-256-GCM (`TOKEN_ENCRYPTION_KEY`) and PyJWT HS256 (`SESSION_SECRET`), both plain `openssl rand -hex 32` values. Tink is reserved for verifying Google's published webhook keyset, which needs no secret key material |
-| Push alert service | Step 9 | ntfy vs Gotify — likely whichever is already running on the self-hosted box |
-| How `client/` is served in production | Step 10 | Tooling settled at step 1: **Vite + React (JavaScript)**. Still open: static build served from the same host as the API, sharing a registrable domain for cookie auth |
+| Push alert service | Step 11 | ntfy vs Gotify — likely whichever is already running on the self-hosted box |
+| ~~How `client/` is served in production~~ | ~~Step 9~~ | **Settled 2026-11-24.** The `vite build` output, served by Caddy from its own image on its own hostname, sharing a registrable domain with the API for cookie auth. The API address is not built in: Caddy serves it as `/config.js` from `API_BASE_URL`, so the public image names no hostname. See [Operations](operations.md#containers) |
 | ~~Role of `google-credentials.json`~~ | ~~Step 2~~ | **Settled: none.** Client ID/secret live in `.env`; the file is kept but unused |
 | ~~Logging~~ | ~~Step 3~~ | **Settled: loguru**, one aggregated record per request on `request.state`, per-route level policy defaulting to full. See [Observability](observability.md) |
 | ~~Storing a log-safe user handle~~ | ~~Step 3~~ | **Settled: not stored.** A truncated SHA-256 of `healthUserId` is a pure function, so it is recomputed on demand — no column, no migration |
@@ -24,10 +24,10 @@ user, rather than assuming.
 | NATS authentication | Step 10 | **None deliberately, for now.** The port is published as `127.0.0.1:${NATS_PORT}` in `docker-compose.yml`, so the broker is not reachable off the box and credentials buy nothing yet. They become necessary at cutover, when the host is exposed |
 | ~~Queue technology~~ | ~~Step 3~~ | **Settled 2026-09-25: NATS JetStream**, file storage. See [Orchestration](orchestration.md) and [the stack rationale](stack.md) |
 | ~~How durability is guaranteed~~ | ~~Step 3~~ | **Settled: ordering, not atomicity.** No broker can join our transaction; commit → publish → `PubAck` → 204, and 503 otherwise, loses nothing given Google's 7-day retry |
-| ~~What a failed flow trigger means~~ | ~~Step 5~~ | **Settled 2026-09-28: swallowed.** The trigger is a payload-free doorbell fired from a `BackgroundTask` after the 204, so it cannot delay the acknowledgement and its failure costs latency rather than data. The interval sweep that makes that honest belongs to step 9 |
+| ~~What a failed flow trigger means~~ | ~~Step 5~~ | **Settled 2026-09-28: swallowed.** The trigger is a payload-free doorbell fired from a `BackgroundTask` after the 204, so it cannot delay the acknowledgement and its failure costs latency rather than data. The interval sweep that makes that honest belongs to step 11 |
 | A table for daily summaries | When a chart needs one | `daily-*` types carry a bare `date` -- a fourth time shape. They land in `unknown_data_points` with their date read into `civil_date`, so they are queryable, and every dashboard chart reads them fine from there. Promote to their own table if a chart needs one |
 | Rollup-only data types | Step 8 or 9 | `floors`, `total-calories` and `calories-in-heart-rate-zone` support no `list`, only `rollUp`/`dailyRollUp`. `floors` now uses `dailyRollUp` and lands in `unknown_data_points`; **total-calories and calories-in-heart-rate-zone remain uncollected**. Google serves only a few months of history, so the gap is recoverable only for a while; they still need a second read path |
-| Unfiltered high-frequency fetches | Step 9 | `heart-rate` and most other types accept no time filter, so a small interval is served by paging from now backwards until past the window. Correct, and wasteful: one hour of heart-rate scanned ~70,000 points to keep 52. Revisit if `reconcile` or `rollup` can narrow it |
+| Unfiltered high-frequency fetches | Step 11 | `heart-rate` and most other types accept no time filter, so a small interval is served by paging from now backwards until past the window. Correct, and wasteful: one hour of heart-rate scanned ~70,000 points to keep 52. Revisit if `reconcile` or `rollup` can narrow it |
 | Whether `recordId` is stable | Step 8 | Moot for fetched points -- Google sends no id, so ours is derived from the window and source. Still open for the webhook's `recordId`, which nothing reads yet |
 | ~~Encryption at rest~~ | ~~Step 6~~ | **Settled 2026-11-01.** Against someone who obtains the app database (SQL injection, leaked credentials, a dump) — disk theft and host root out of scope, since the key sits in `.env`. Application-level AES-256-GCM with `DATA_ENCRYPTION_KEY`, via a lazily-resolved `TypeDecorator`; every value encrypted, structure plaintext; version byte, zlib on JSON columns, no associated data; app database only. See [Encryption at rest](encryption.md) |
 | Combining sources | Before a chart needs a non-Fitbit source | Steps, distance and exercise arrive from Fitbit and from Apple HealthKit (including Nike Run Club), overlapping in time, so summing every source double-counts. Reads use `FITBIT` and `GOOGLE_HEALTH` only for now. Merging, averaging, or using Google's own deduplicated `dailyRollUp` totals is undecided. See [Data model](data-model.md) |
@@ -51,19 +51,27 @@ user, rather than assuming.
 - **Backfill as a durable workflow.** `backfill run` is a CLI that runs in the
   foreground: an interrupted run keeps every committed day but restarts from
   "now", and nothing retries it or records how far it got. It belongs in a
-  Prefect flow alongside the step 9 `:reconcile` schedule, with per-type
+  Prefect flow alongside the step 11 `:reconcile` schedule, with per-type
   progress, retries and a resumable cursor
 - **Filter fields for more types.** Only five types have a verified filter
   field. Probing the others would let them be fetched a day at a time, which is
   cheaper still than one backward pass
 - **Alerting on a crashed rollup run.** A `rollup-heart-rate` run that
   Prefect marks *Crashed* (its worker died) is not retried, so its hours stay
-  stale until the step 9 rebuild or a manual `rollup rebuild`. A notification
-  on crashed and failed runs belongs with step 9's push alerting; a Prefect
+  stale until the step 11 rebuild or a manual `rollup rebuild`. A notification
+  on crashed and failed runs belongs with step 11's push alerting; a Prefect
   automation that reruns them is the other option, and adds setup outside the
   repo
 - **Binding Postgres to `127.0.0.1`** and replacing the default password — it
   is published on every interface today. The user's own task
+- **Automatic rollback of a failed update.** The server pulls `latest` and
+  recreates whatever changed; a release whose containers never become healthy
+  stays broken until the previous version is pinned with `APP_VERSION`.
+  Releases are tagged by hand, so someone is around when one goes out
+- **The server's updater and boot unit** live in the separate repository that
+  holds the server's other services, not here: a systemd timer running
+  `docker compose pull && docker compose up -d`, and a oneshot unit running
+  `docker compose up -d` at boot. Written at the step 10 cutover
 - The ML layer over collected data — `raw_notifications` and the `raw` column
   of every [measurement table](data-model.md) already preserve what it will need
 

@@ -349,7 +349,7 @@ Colours live in `client/src/dashboard/theme.js`.
 
 - [Combining sources](decisions.md#open-decisions): reads keep `FITBIT` and
   `GOOGLE_HEALTH` only, so Nike Run Club copies of runs are dropped.
-- [How `client/` is served in production](decisions.md#open-decisions): due at
-  step 10.
+- [How `client/` is served in production](decisions.md#open-decisions): settled
+  at step 9 — Caddy, from its own image.
 - [A table for daily summaries](decisions.md#open-decisions): not needed; the
   daily routes read fine from `unknown_data_points`.
