@@ -11,6 +11,13 @@ TRIGGER_TIMEOUT_SECONDS: Final = 5.0
 #: Prefect's REST path for starting a run of a deployment.
 CREATE_RUN_PATH: Final = "/deployments/{deployment_id}/create_flow_run"
 
+#: The fetcher deployment's name, as ``server.flows.fetch:deploy`` serves it.
+FETCHER_DEPLOYMENT_NAME: Final = "fetcher"
+
+#: The same deployment as ``flow/deployment``, the form Prefect looks it up by.
+#: The receiver finds it by name, so a fresh Prefect needs no setting.
+FETCHER_DEPLOYMENT: Final = f"fetch-notifications/{FETCHER_DEPLOYMENT_NAME}"
+
 #: The rollup deployment's name, as the fetcher flow's process serves it.
 ROLLUP_DEPLOYMENT_NAME: Final = "rollup"
 

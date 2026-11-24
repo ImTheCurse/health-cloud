@@ -127,3 +127,83 @@ def test_a_deployment_prefect_does_not_know_raises():
             "rollup-heart-rate/rollup",
             session=transport,  # type: ignore[arg-type]
         )
+
+
+# --- the receiver's doorbell, which finds the fetcher by name ---
+
+
+def named_trigger_with(transport):
+    return FlowTrigger(
+        "http://prefect:4200/api",
+        session=transport,  # type: ignore[arg-type]
+        deployment_name="fetch-notifications/fetcher",
+    )
+
+
+def test_a_named_trigger_makes_no_call_until_it_is_rung():
+    """It is built while the app starts, when Prefect may not be up yet."""
+    transport = FakeTransport()
+
+    named_trigger_with(transport)
+
+    assert transport.requests == []
+
+
+def test_a_named_trigger_looks_the_name_up_once():
+    transport = FakeTransport([FakeResponse(200, {"id": DEPLOYMENT})])
+    trigger = named_trigger_with(transport)
+
+    trigger.trigger()
+    trigger.trigger()
+
+    urls = [request["url"] for request in transport.requests]
+    assert urls == [
+        "http://prefect:4200/api/deployments/name/fetch-notifications/fetcher",
+        f"http://prefect:4200/api/deployments/{DEPLOYMENT}/create_flow_run",
+        f"http://prefect:4200/api/deployments/{DEPLOYMENT}/create_flow_run",
+    ]
+
+
+def test_a_failed_lookup_is_tried_again_on_the_next_ring():
+    """Prefect not being up yet must not leave the doorbell broken for good."""
+    transport = FakeTransport(
+        [FakeResponse(404), FakeResponse(200, {"id": DEPLOYMENT})]
+    )
+    trigger = named_trigger_with(transport)
+
+    with pytest.raises(TriggerError, match="404"):
+        trigger.trigger()
+    trigger.trigger()
+
+    assert transport.requests[-1]["url"].endswith(
+        f"/deployments/{DEPLOYMENT}/create_flow_run"
+    )
+
+
+def test_a_deployment_prefect_has_forgotten_is_looked_up_again():
+    """Deleting and re-registering a deployment gives it a new id."""
+    transport = FakeTransport(
+        [
+            FakeResponse(200, {"id": DEPLOYMENT}),  # the lookup
+            FakeResponse(201, {"id": "run-1"}),  # the first run
+            FakeResponse(404),  # the id is gone
+            FakeResponse(200, {"id": "new-id"}),  # the second lookup
+        ]
+    )
+    trigger = named_trigger_with(transport)
+    trigger.trigger()
+
+    with pytest.raises(TriggerError, match="404"):
+        trigger.trigger()
+    trigger.trigger()
+
+    assert transport.requests[-1]["url"].endswith("/deployments/new-id/create_flow_run")
+
+
+def test_a_trigger_needs_exactly_one_of_an_id_and_a_name():
+    with pytest.raises(ValueError):
+        FlowTrigger("http://prefect:4200/api")
+    with pytest.raises(ValueError):
+        FlowTrigger(
+            "http://prefect:4200/api", DEPLOYMENT, deployment_name="flow/deployment"
+        )

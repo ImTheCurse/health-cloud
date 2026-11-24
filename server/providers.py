@@ -26,6 +26,7 @@ from server.health.client import HealthDataClient
 from server.health.credentials import AccessTokens
 from server.health.fetcher import Fetcher
 from server.orchestration.client import FlowTrigger
+from server.orchestration.const import FETCHER_DEPLOYMENT
 from server.queue.publisher import NotificationPublisher
 from server.rollup.hours import HeartRateHours
 from server.webhooks.receiver import EndpointAuthorizer
@@ -98,15 +99,14 @@ def get_publisher() -> NotificationPublisher:
 
 @lru_cache
 def get_flow_trigger() -> FlowTrigger:
-    """The doorbell for the fetcher deployment.
+    """The doorbell for the fetcher deployment, found by name.
 
     Cached so the underlying ``requests`` session -- and its connection pool --
-    is reused. Constructing it makes no call; ``trigger()`` does.
+    is reused, along with the deployment id once it has been looked up.
+    Constructing it makes no call; the first ``trigger()`` does.
     """
-    settings = get_settings()
     return FlowTrigger(
-        api_url=settings.prefect_api_url,
-        deployment_id=settings.prefect_deployment_id,
+        api_url=get_settings().prefect_api_url, deployment_name=FETCHER_DEPLOYMENT
     )
 
 
