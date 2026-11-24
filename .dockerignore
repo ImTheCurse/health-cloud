@@ -1,0 +1,25 @@
+# Secrets. The images are published publicly, so anything that reaches the
+# build context can end up readable by anyone who pulls them. These are mounted
+# or passed in at runtime instead.
+.env
+.env.*
+!.env.example
+service-account.json
+google-credentials.json
+*.pem
+*.key
+
+# Local state that has no place in an image.
+.git
+.github
+.venv
+**/__pycache__
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.zed
+.claude
+client/node_modules
+client/dist
+docs
+tests

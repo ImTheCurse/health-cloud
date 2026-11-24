@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import SignalField from "./SignalField.jsx";
-import { connectUrl, fetchAccount, signOut } from "./api.js";
+import { API_BASE, connectUrl, fetchAccount, signOut } from "./api.js";
 import Dashboard from "./dashboard/Dashboard.jsx";
 
 const LOADING = "loading";
@@ -55,9 +55,9 @@ export default function App() {
       {state === UNREACHABLE && (
         <Panel title="The recorder isn't answering.">
           <p>
-            Nothing is listening on localhost:8000. Start it with{" "}
-            <code>uv run uvicorn server.main:app --workers 3</code>, then reload
-            this page.
+            Nothing answered at <code>{API_BASE}</code>, or it refused this
+            page&apos;s origin. Check that the API is running and that{" "}
+            <code>CORS_ORIGINS</code> lists this page, then reload.
           </p>
         </Panel>
       )}

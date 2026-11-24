@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17.11-alpine
     container_name: health-cloud-postgres
     restart: unless-stopped
     environment:
@@ -18,7 +18,7 @@ services:
       retries: 10
 
   nats:
-    image: nats:2-alpine
+    image: nats:2.15.0-alpine
     container_name: health-cloud-nats
     restart: unless-stopped
     # -js enables JetStream; without it NATS is at-most-once and persists
@@ -41,7 +41,7 @@ services:
 
   # Prefect's own database, deliberately separate from the app's.
   prefect-postgres:
-    image: postgres:17-alpine
+    image: postgres:17.11-alpine
     container_name: health-cloud-prefect-db
     restart: unless-stopped
     environment:
@@ -57,7 +57,9 @@ services:
       retries: 10
 
   prefect:
-    image: prefecthq/prefect:3-latest
+    # Pinned to the version uv.lock gives the worker. An unpinned tag would
+    # run Prefect's own database migrations unattended on the next pull.
+    image: prefecthq/prefect:3.8.7-python3.12
     container_name: health-cloud-prefect
     restart: unless-stopped
     depends_on:
@@ -79,7 +81,7 @@ services:
       retries: 12
 
   prefect-services:
-    image: prefecthq/prefect:3-latest
+    image: prefecthq/prefect:3.8.7-python3.12
     container_name: health-cloud-prefect-services
     restart: unless-stopped
     depends_on:
@@ -89,6 +91,103 @@ services:
       PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://prefect:prefect@prefect-postgres:5432/prefect
       PREFECT_API_URL: http://prefect:4200/api
     command: ["prefect", "server", "services", "start"]
+
+  # --- The app. Each service is built locally (`docker compose up --build`)
+  # and pulled from GHCR on the server (`docker compose pull`); APP_VERSION
+  # picks the tag. See the README's "Running with Docker".
+
+  api:
+    build:
+      context: .
+      target: api
+    image: ghcr.io/imthecurse/health-cloud-api:${APP_VERSION:-dev}
+    container_name: health-cloud-api
+    restart: unless-stopped
+    # Required by deploy/healthcheck.sh: a hung process can only be stopped
+    # from inside the container when it is not PID 1.
+    init: true
+    env_file: .env
+    environment: &app-environment
+      # Addresses inside the compose network, overriding the localhost ones in
+      # .env that a process run on the host uses.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-healthcloud}:${POSTGRES_PASSWORD:-healthcloud}@postgres:5432/${POSTGRES_DB:-healthcloud}
+      NATS_URL: nats://nats:4222
+      PREFECT_API_URL: http://prefect:4200/api
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/service-account.json
+    secrets:
+      - service-account.json
+    ports:
+      - "127.0.0.1:${API_PORT:-7781}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      # Liveness, not /readyz: a Postgres outage would otherwise restart the
+      # API over and over, which fixes nothing.
+      test: ["CMD", "healthcheck", "python", "/usr/local/bin/probe.py", "http", "http://127.0.0.1:8000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+      start_interval: 5s
+
+  worker:
+    build:
+      context: .
+      target: worker
+    image: ghcr.io/imthecurse/health-cloud-worker:${APP_VERSION:-dev}
+    container_name: health-cloud-worker
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    environment: *app-environment
+    # Time to finish the message in hand. Anything left unacknowledged is
+    # redelivered, so a stop cut short delays work but never loses it.
+    stop_grace_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      prefect:
+        condition: service_healthy
+    healthcheck:
+      # Prefect marks the deployment NOT_READY once the process serving it
+      # stops polling, which is what a hung worker looks like.
+      test: ["CMD", "healthcheck", "python", "/usr/local/bin/probe.py", "deployment", "http://prefect:4200/api", "fetch-notifications/fetcher"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+      start_interval: 5s
+
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    image: ghcr.io/imthecurse/health-cloud-client:${APP_VERSION:-dev}
+    container_name: health-cloud-client
+    restart: unless-stopped
+    init: true
+    environment:
+      # Where the browser reaches the API. Served to it as /config.js.
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:7781}
+    ports:
+      - "127.0.0.1:${CLIENT_PORT:-7780}:8080"
+    healthcheck:
+      test: ["CMD", "healthcheck", "wget", "-q", "-O", "/dev/null", "-T", "5", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+      start_interval: 5s
+
+secrets:
+  # Authorises the subscriber commands. Never part of an image.
+  service-account.json:
+    file: ./service-account.json
 
 volumes:
   postgres_data:
