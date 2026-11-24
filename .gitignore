@@ -12,8 +12,16 @@ wheels/
 # Secrets
 google-credentials.json
 service-account.json
+# Every env file, including backups and per-environment copies; only the
+# template with no values is tracked.
 .env
+.env.*
+!.env.example
 *.key
+*.pem
+
+# Local Compose overrides, which can carry settings for one machine.
+docker-compose.override.yml
 
 # Node
 node_modules/

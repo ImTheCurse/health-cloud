@@ -1,4 +1,10 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+// The container serves /config.js with the address it was started with, so one
+// image works for any deployment. Under `npm run dev` that file is empty and
+// the Vite variable applies.
+export const API_BASE =
+  window.__CONFIG__?.apiBaseUrl ||
+  import.meta.env.VITE_API_BASE_URL ||
+  "http://localhost:8000";
 
 // Google redirects the browser itself, so this is a navigation, not a fetch.
 export const connectUrl = `${API_BASE}/auth/google/login`;

@@ -63,6 +63,7 @@ workers, where retries are free.
 | Frontend | React, nivo for charts, MUI for controls — see [Charting](charting.md) |
 | Layout | Monorepo: `server/` + `client/`, separate deploy artifacts |
 | Config | `.env` |
+| Deployment | Docker Compose; app images published to GHCR by CI, served by Caddy for the client — see [Operations](operations.md#containers) |
 | Tests | pytest |
 
 Why each row was chosen, and the conventions that follow from it, are in
@@ -84,7 +85,7 @@ and the reasoning is what stops a settled question being reopened by accident.
 | [Encryption at rest](encryption.md) | Adding a column, reading measurements, or anything that touches stored health values |
 | [Observability](observability.md) | Adding logging, or handling an error on a path that sees health data |
 | [Testing](testing.md) | Writing tests, or building a fixture |
-| [Operations](operations.md) | Registering a subscriber, changing the public URL, or deploying |
+| [Operations](operations.md) | Registering a subscriber, changing the public URL, deploying, or touching the containers and images |
 | [Decisions: open, deferred, rejected](decisions.md) | Before proposing anything — it records what is undecided and what was already turned down |
 | [Charting](charting.md) | Touching `client/`: a chart, a control, a colour, or how data is fetched and cached |
 | [Skills](skills.md) | Choosing or adding an agent skill, or when a skill's advice seems to contradict a decision here |
@@ -175,10 +176,17 @@ Progress marker — tick a box only when the step is genuinely complete.
       those from samples. A 90-day read went from 664,358 rows in 27 s to 1,336
       in 0.07 s. A backfill's rollup run was seen completing in Prefect. 501
       tests.
-- [ ] **9. Prefect schedule** — **next task.** Daily 7-day `:reconcile`
+- [ ] **9. Containers and published images** — **in progress.** The API,
+      the Prefect worker and the client in `docker-compose.yml`; versioned
+      images published to GHCR by CI; health checks that restart a hung
+      container; the receiver finding the fetcher deployment by name. See
+      [Operations](operations.md#containers)
+- [ ] **10. Cutover to cloudflared** — subscriber PATCH to the self-hosted
+      URL; the server's update timer and boot unit, kept with its other
+      services
+- [ ] **11. Prefect schedule** — Daily 7-day `:reconcile`
       flow that also rebuilds the last 7 days of hourly heart-rate summaries,
       + push alerting on token expiry and on failed or crashed rollup runs
-- [ ] **10. Cutover to cloudflared** — subscriber PATCH to the self-hosted URL
 
 Step 3 precedes step 4 deliberately: verification logic is tested against
 fixtures before Google is ever pointed at the endpoint.
@@ -189,6 +197,10 @@ persistence was built. It was the right call for an unrelated reason — real
 traffic immediately exposed the payload-shape error that fixtures had not.
 Persistence landed the following day, within Google's 7-day retry window, so
 nothing delivered in between was lost.
+
+**The schedule was moved behind the cutover** on 2026-11-24, by choice:
+containers and the move to the server come first, and the schedule with its
+alerts follows as step 11.
 
 Encryption precedes the read API, and the read API the dashboard, because
 encrypted values cannot be filtered or aggregated in SQL: routes written against

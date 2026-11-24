@@ -1,0 +1,27 @@
+{
+	# Nothing here needs the admin API or certificates: cloudflared terminates
+	# TLS in front of it.
+	admin off
+	auto_https off
+}
+
+:8080 {
+	encode zstd gzip
+
+	# The API address, from the container's environment. {$API_BASE_URL} is
+	# substituted when Caddy reads this file.
+	handle /config.js {
+		header Content-Type "text/javascript; charset=utf-8"
+		header Cache-Control "no-store"
+		respond `window.__CONFIG__ = { apiBaseUrl: "{$API_BASE_URL}" };`
+	}
+
+	handle {
+		root * /srv
+		# Vite fingerprints everything under /assets, so it never changes.
+		header /assets/* Cache-Control "public, max-age=31536000, immutable"
+		# Any path that is not a file is a client-side route.
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -41,7 +41,11 @@ from server.flows.rollup import rollup_heart_rate
 from server.health.error import TokenExpiredError
 from server.health.fetcher import FetchResult
 from server.observability.util import hashed_log_id
-from server.orchestration.const import ROLLUP_DEPLOYMENT, ROLLUP_DEPLOYMENT_NAME
+from server.orchestration.const import (
+    FETCHER_DEPLOYMENT_NAME,
+    ROLLUP_DEPLOYMENT,
+    ROLLUP_DEPLOYMENT_NAME,
+)
 from server.providers import build_fetcher, build_user_repository
 from server.queue.consumer import NotificationConsumer
 from server.queue.error import DrainAborted
@@ -232,14 +236,13 @@ def deploy() -> None:
     state machine to manage for no benefit at this size. The process this starts
     both registers the deployment and executes its runs.
 
-    It prints the fetcher deployment's id, which belongs in
-    ``PREFECT_DEPLOYMENT_ID`` so the receiver can ring the doorbell. The rollup
-    deployment is found by name, so it needs no setting.
+    The receiver and the backfill find both deployments by name, so nothing
+    printed here needs copying into a setting.
     """
     # to_deployment returns a coroutine only when called from async code; here
     # it is synchronous, which its signature cannot express.
     serve(
-        fetch_notifications.to_deployment(name="fetcher"),  # type: ignore[arg-type]
+        fetch_notifications.to_deployment(name=FETCHER_DEPLOYMENT_NAME),  # type: ignore[arg-type]
         rollup_heart_rate.to_deployment(name=ROLLUP_DEPLOYMENT_NAME),  # type: ignore[arg-type]
     )
 

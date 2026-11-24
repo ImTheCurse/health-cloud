@@ -117,7 +117,10 @@ server/              FastAPI backend, imported as server.<module>
 client/              React dashboard (Vite)
 tests/               pytest suite, mirroring server/
 docs/                design documents
-docker-compose.yml   Postgres, NATS, Prefect and Prefect's database
+deploy/              container health checks
+Dockerfile           the API and worker images
+docker-compose.yml   the app's three containers, plus Postgres, NATS, Prefect
+                     and Prefect's database
 ```
 
 ## Getting started
@@ -149,11 +152,30 @@ openssl rand -hex 32   # once each for TOKEN_ENCRYPTION_KEY, SESSION_SECRET, DAT
 Keep `DATA_ENCRYPTION_KEY` safe: without it the stored measurements cannot be
 read.
 
-### 2. Start the services
+### 2. Start everything
 
 ```bash
-docker compose up -d     # Postgres :5432, NATS :4222, Prefect :4200
-uv sync                  # backend dependencies
+docker compose up -d --build --wait
+```
+
+This builds and starts the API, the Prefect worker and the dashboard alongside
+Postgres, NATS and Prefect. Open <http://localhost:7780> and choose **Connect
+Google Health**. Google shows an "unverified app" warning, since the OAuth
+client is private and has not been through Google's app verification.
+
+The defaults in `.env.example` are for this setup. The OAuth client in GCP must
+list `http://localhost:7781/auth/google/callback` as a redirect URI. See
+[Running with Docker](#running-with-docker) for what each container does.
+
+### 3. Running on the host instead
+
+For development with reloading, run only the infrastructure in containers and
+the app directly. Switch the values marked `host:` in `.env` first: the API is
+then on port 8000 and the dashboard on 5173.
+
+```bash
+docker compose up -d postgres nats prefect prefect-services
+uv sync
 uv run uvicorn server.main:app --workers 3
 ```
 
@@ -166,8 +188,6 @@ Health checks:
 - `GET /healthz`: liveness
 - `GET /readyz`: readiness, which checks both Postgres and NATS
 
-### 3. Start the fetcher
-
 `prefect` is in its own dependency group, so the web process never installs it.
 In a separate terminal, run and leave running:
 
@@ -176,9 +196,8 @@ uv run --group prefect python -m server.flows.fetch deploy
 ```
 
 This registers the `fetcher` and `rollup-heart-rate/rollup` deployments and
-serves their runs. Put the fetcher's deployment ID it prints into
-`PREFECT_DEPLOYMENT_ID` in `.env`, then restart the API. The rollup deployment
-is found by name and needs no setting.
+serves their runs. The API and the backfill find both deployments by name, so
+nothing it prints needs copying into `.env`.
 
 To drain the queue once without serving a deployment:
 
@@ -186,7 +205,7 @@ To drain the queue once without serving a deployment:
 uv run --group prefect python -m server.flows.fetch
 ```
 
-### 4. Start the dashboard
+Then the dashboard:
 
 ```bash
 cd client
@@ -194,11 +213,9 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:5173> and choose **Connect Google Health**. Google shows
-an "unverified app" warning, since the OAuth client is private and has not been
-through Google's app verification.
+and open <http://localhost:5173>.
 
-### 5. Register the webhook subscriber
+### 4. Register the webhook subscriber
 
 With the API reachable at `WEBHOOK_PUBLIC_URL`:
 
@@ -211,7 +228,7 @@ uv run python -m server.cli subscriber list
 `subscriber patch` repoints the registration at a new URL, for example when
 moving from a development tunnel to production.
 
-### 6. Backfill history
+### 5. Backfill history
 
 Google only notifies about new changes, so fill past data directly:
 
@@ -224,6 +241,78 @@ about 34,000 points a day, and the Health API keeps only about a week of it.
 A backfill that includes heart rate ends by starting a rollup run, which
 rebuilds the hourly summaries the long heart-rate charts read; it needs the
 Prefect deployments served.
+
+## Running with Docker
+
+The same stack runs entirely in containers, which is how it runs in
+production. `docker-compose.yml` defines three app services alongside the
+infrastructure:
+
+| Service | Image | Runs | Published on |
+| --- | --- | --- | --- |
+| `api` | `health-cloud-api` | `uvicorn server.main:app --workers 3` | `127.0.0.1:${API_PORT:-7781}` |
+| `worker` | `health-cloud-worker` | `python -m server.flows.fetch deploy` | not published |
+| `client` | `health-cloud-client` | Caddy serving the production build | `127.0.0.1:${CLIENT_PORT:-7780}` |
+
+Build and start everything from the working tree:
+
+```bash
+docker compose up -d --build --wait
+```
+
+The app containers read `.env`, with the addresses of Postgres, NATS and
+Prefect replaced by their service names, and `service-account.json` mounted
+read-only. One-off commands run in the API image:
+
+```bash
+docker compose run --rm api python -m server.cli backfill run --days 7
+```
+
+The client image holds no API address. `API_BASE_URL` is served to the browser
+as `/config.js` when the container starts, so one image serves any
+deployment. `npm run dev` keeps reading `VITE_API_BASE_URL` instead.
+
+### Health checks and restarts
+
+Every container restarts with `restart: unless-stopped`. Docker restarts a
+process that exits, but only marks a hung one unhealthy, so each app container
+runs its probe through `deploy/healthcheck.sh`, which stops the container after
+three consecutive failures (TERM, then KILL on the next failure) for the restart
+policy to bring it back. Failures in the first 60 seconds after a start are not
+counted.
+
+| Service | Healthy when |
+| --- | --- |
+| `api` | `GET /healthz` answers (liveness, not readiness: restarting it does not fix a database outage) |
+| `worker` | Prefect does not report the `fetcher` deployment as `NOT_READY`, which it does once the serving process stops polling |
+| `client` | Caddy answers `GET /` |
+
+### Images and releases
+
+CI publishes the images to GHCR once the tests pass:
+
+- a push to `main` publishes `sha-<short>`;
+- a `vX.Y.Z` tag publishes `X.Y.Z`, `X.Y` and `latest`.
+
+Releases are tagged by hand:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+`APP_VERSION` selects the tag Compose runs; it defaults to `dev`, the tag a
+local build produces. A deployment that follows releases sets
+`APP_VERSION=latest` and runs `docker compose pull && docker compose up -d`.
+A release that changes `docker-compose.yml` or adds a setting must have that
+file copied to the server by hand, since the server holds no checkout.
+
+### Production settings
+
+Any `ENVIRONMENT` other than `local` is production: logs are written as JSON
+without local variables, and direct reads of the NATS stream are disabled. A
+production `.env` also sets `COOKIE_SECURE=true`, and points `FRONTEND_URL`,
+`CORS_ORIGINS`, `GOOGLE_REDIRECT_URI` and `API_BASE_URL` at the public
+hostnames. The redirect URI must also be registered on the GCP OAuth client.
 
 ## Development
 
@@ -253,7 +342,9 @@ uv run python -m server.cli rollup rebuild --days 120   # rebuild the hourly hea
 - Sessions are HS256-signed, HTTP-only cookies. Credentialed requests are
   accepted only from the origins in `CORS_ORIGINS`.
 - NATS and Prefect have no authentication of their own and are bound to
-  localhost.
+  localhost, as are the API and client ports.
+- The published images are public and contain no secrets: `.dockerignore`
+  keeps `.env` and the Google credential files out of every build.
 - Logs never contain health values or personal details.
 
 ## Documentation
@@ -278,7 +369,7 @@ order, and links to a document for each area:
 
 ## Status
 
-The ingestion pipeline, encryption and read API are complete. The dashboard is
-being reworked around a home page of daily figures. Still to come: stored hourly
-heart-rate summaries for long ranges, a scheduled daily reconciliation with
-alerts on token expiry, and production deployment behind Cloudflare Tunnel.
+The ingestion pipeline, encryption, read API, dashboard and stored hourly
+heart-rate summaries are complete, and the whole stack runs in containers. Still
+to come: production deployment behind Cloudflare Tunnel, then a scheduled daily
+reconciliation with alerts on token expiry.
