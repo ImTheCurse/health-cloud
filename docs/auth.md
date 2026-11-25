@@ -17,8 +17,11 @@ resets, and credential stuffing from the threat model entirely.
   `localStorage` — that is the XSS exposure this design is avoiding. Google's ID
   token is *not* a session (≈1 hour, unextendable without bouncing through
   Google), so minting our own credential is unavoidable.
-- **CSRF:** double-submit token on state-changing requests. Cookie auth needs
-  this regardless of JWT vs opaque sessions.
+- **CSRF:** the session cookie is `SameSite=Lax`, which keeps it off another
+  site's POST. `POST /backfill`, the one request that starts work, also
+  requires `X-Requested-With: health-cloud`: a cross-site form cannot set a
+  header, and a cross-site `fetch` that does must pass a CORS preflight. A
+  double-submit token on every state-changing request is deferred.
 - **Refresh token:** stays server-side, encrypted at rest. Never reaches the
   browser.
 - **Client credentials:** `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in `.env`.

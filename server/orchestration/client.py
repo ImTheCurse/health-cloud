@@ -1,4 +1,5 @@
-"""Starting flow runs: the fetcher's doorbell, and the backfill's rollup.
+"""Starting and reading flow runs: the fetcher's doorbell, the backfill's
+rollup, and the dashboard's backfill button.
 
 Prefect's REST API over ``requests``, rather than ``run_deployment`` from the
 ``prefect`` package. This is one endpoint, so a small
@@ -14,6 +15,7 @@ The rollup run the backfill starts is the exception, and carries the span of
 hours to rebuild: that span is the whole of its input.
 """
 
+from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Any
 
@@ -23,6 +25,7 @@ from loguru import logger
 from server.orchestration.const import (
     CREATE_RUN_PATH,
     DEPLOYMENT_BY_NAME_PATH,
+    FLOW_RUN_PATH,
     TRIGGER_TIMEOUT_SECONDS,
 )
 from server.orchestration.error import TriggerError
@@ -130,3 +133,56 @@ def _run_id(response: requests.Response) -> str | None:
     if isinstance(body, dict) and isinstance(body.get("id"), str):
         return body["id"]
     return None
+
+
+@dataclass(frozen=True)
+class FlowRun:
+    """What the dashboard needs to know about one run."""
+
+    #: Prefect's state type: ``SCHEDULED``, ``PENDING``, ``RUNNING``,
+    #: ``COMPLETED``, ``FAILED``, ``CRASHED``, ``CANCELLED`` and so on.
+    state_type: str
+    parameters: dict[str, Any]
+
+
+class FlowRuns:
+    """Reads flow runs from Prefect's REST API."""
+
+    def __init__(
+        self,
+        api_url: str,
+        session: requests.Session | None = None,
+        timeout: float = TRIGGER_TIMEOUT_SECONDS,
+    ) -> None:
+        self._api_url = api_url.rstrip("/")
+        self._session = session or requests.Session()
+        self._timeout = timeout
+
+    def read(self, run_id: str) -> FlowRun | None:
+        """The run, or ``None`` if Prefect has no run with that id.
+
+        Raises:
+            TriggerError: Prefect could not be reached or refused the read.
+        """
+        url = self._api_url + FLOW_RUN_PATH.format(run_id=run_id)
+        try:
+            response = self._session.get(url, timeout=self._timeout)
+        except requests.RequestException as error:
+            raise TriggerError(f"could not reach Prefect: {error}") from error
+        # Prefect answers 422 for an id that is not a UUID.
+        if response.status_code in (HTTPStatus.NOT_FOUND, HTTPStatus.UNPROCESSABLE_ENTITY):
+            return None
+        if response.status_code >= 400:
+            raise TriggerError(f"Prefect answered {response.status_code}")
+        try:
+            body: Any = response.json()
+        except ValueError as error:
+            raise TriggerError("Prefect answered with no JSON") from error
+        if not isinstance(body, dict):
+            raise TriggerError("Prefect answered with something other than a run")
+        state = body.get("state") or {}
+        parameters = body.get("parameters") or {}
+        return FlowRun(
+            state_type=str(state.get("type") or body.get("state_type") or "UNKNOWN"),
+            parameters=parameters if isinstance(parameters, dict) else {},
+        )

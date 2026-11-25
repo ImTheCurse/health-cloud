@@ -61,7 +61,9 @@ async def backfill_one_type(
 
 
 @flow(name="backfill-recent", log_prints=True)
-async def backfill_recent(window_hours: int | None = None) -> str:
+async def backfill_recent(
+    window_hours: int | None = None, health_user_id: str | None = None
+) -> str:
     """Fetch the last ``window_hours`` of every type for every consented user.
 
     The types run **one after another, never in parallel**, because of Google's
@@ -73,6 +75,8 @@ async def backfill_recent(window_hours: int | None = None) -> str:
     Args:
         window_hours: how far back to reach. The schedule leaves it unset, for
             ``BACKFILL_WINDOW``; a manual run can ask for more.
+        health_user_id: backfill only this user. The dashboard's backfill
+            button sets it; the schedule leaves it unset, for every user.
     """
     logger = get_run_logger()
     window = (
@@ -81,13 +85,18 @@ async def backfill_recent(window_hours: int | None = None) -> str:
     end = dt.datetime.now(dt.UTC)
     start = end - window
 
+    users = (
+        [health_user_id]
+        if health_user_id is not None
+        else await anyio.to_thread.run_sync(_user_ids)
+    )
     failed: list[str] = []
-    for health_user_id in await anyio.to_thread.run_sync(_user_ids):
-        user = hashed_log_id(health_user_id)
+    for user_id in users:
+        user = hashed_log_id(user_id)
         hours: HourSpan | None = None
         for data_type in backfill_types():
             try:
-                result = await backfill_one_type(health_user_id, data_type, start, end)
+                result = await backfill_one_type(user_id, data_type, start, end)
             except TokenExpiredError:
                 logger.error(
                     "backfill stopped for user %s: the refresh token is dead; "
@@ -110,7 +119,7 @@ async def backfill_recent(window_hours: int | None = None) -> str:
                 hours = result.hours.union(hours)
 
         if hours is not None:
-            run_id = await request_rollup(health_user_id, hours)
+            run_id = await request_rollup(user_id, hours)
             logger.info("requested rollup run %s (user %s)", run_id, user)
 
     if failed:

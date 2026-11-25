@@ -25,8 +25,8 @@ from server.db.measurements import MeasurementRepository
 from server.health.client import HealthDataClient
 from server.health.credentials import AccessTokens
 from server.health.fetcher import Fetcher
-from server.orchestration.client import FlowTrigger
-from server.orchestration.const import FETCHER_DEPLOYMENT
+from server.orchestration.client import FlowRuns, FlowTrigger
+from server.orchestration.const import BACKFILL_DEPLOYMENT, FETCHER_DEPLOYMENT
 from server.queue.publisher import NotificationPublisher
 from server.rollup.hours import HeartRateHours
 from server.webhooks.receiver import EndpointAuthorizer
@@ -108,6 +108,20 @@ def get_flow_trigger() -> FlowTrigger:
     return FlowTrigger(
         api_url=get_settings().prefect_api_url, deployment_name=FETCHER_DEPLOYMENT
     )
+
+
+@lru_cache
+def get_backfill_trigger() -> FlowTrigger:
+    """Starts the scheduled backfill's deployment, found by name on first use."""
+    return FlowTrigger(
+        api_url=get_settings().prefect_api_url, deployment_name=BACKFILL_DEPLOYMENT
+    )
+
+
+@lru_cache
+def get_flow_runs() -> FlowRuns:
+    """Reads flow runs, for the dashboard's backfill button."""
+    return FlowRuns(get_settings().prefect_api_url)
 
 
 @lru_cache

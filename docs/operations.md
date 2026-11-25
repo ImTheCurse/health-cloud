@@ -25,7 +25,9 @@ subscriber, exposing the endpoint through a tunnel, and where failures surface.
   authentication), so it is reached through an SSH tunnel:
   `ssh -L 4200:localhost:4200 ssh-cloud`, then `http://localhost:4200`. The
   hourly `backfill-recent/recent` runs are listed under its deployment; a
-  failed one is marked *Failed* and names the types it could not fetch. See
+  failed one is marked *Failed* and names the types it could not fetch. The
+  dashboard's "Backfill today" button starts one on demand and reports
+  "Backfill failed" when it fails. See
   [Orchestration](orchestration.md#the-scheduled-backfill).
 
 ## Containers

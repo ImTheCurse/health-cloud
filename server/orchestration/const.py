@@ -40,3 +40,10 @@ BACKFILL_SCHEDULE: Final = "0 * * * *"
 #: a phone can upload hours late, so the window is a day rather than the hour
 #: between runs: anything listed within a day is fetched by roughly 23 runs.
 BACKFILL_WINDOW: Final = dt.timedelta(days=1)
+
+#: Prefect's REST path for reading one flow run.
+FLOW_RUN_PATH: Final = "/flow_runs/{run_id}"
+
+#: The scheduled backfill deployment as ``flow/deployment``. The dashboard's
+#: backfill button finds it by name, like the receiver finds the fetcher.
+BACKFILL_DEPLOYMENT: Final = f"backfill-recent/{BACKFILL_DEPLOYMENT_NAME}"

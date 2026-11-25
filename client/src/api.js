@@ -39,3 +39,17 @@ export function fetchData(path, params, signal) {
   const query = new URLSearchParams(params).toString();
   return request(`/data${path}?${query}`, { signal });
 }
+
+// Sent on every request that changes something. The API refuses those without
+// it: a form on another site cannot set a header.
+const CHANGES = { "X-Requested-With": "health-cloud" };
+
+/** Starts a backfill of the last day. Resolves to `{ run_id }`. */
+export function startBackfill() {
+  return request("/backfill", { method: "POST", headers: CHANGES });
+}
+
+/** How a backfill run is going: `{ state }`, one of running, completed, failed. */
+export function fetchBackfill(runId) {
+  return request(`/backfill/${encodeURIComponent(runId)}`);
+}

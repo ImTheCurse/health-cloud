@@ -99,3 +99,21 @@ async def test_no_rollup_run_without_heart_rate_hours(flow, monkeypatch):
     await backfill.backfill_recent.fn()
 
     assert flow["rollups"] == []
+
+
+async def test_a_named_user_is_the_only_one_backfilled(flow, monkeypatch):
+    """The dashboard's button backfills the signed-in user, not everyone."""
+    seen: list[str] = []
+    original = backfill.backfill_one_type
+
+    async def recording(health_user_id, data_type, start, end):
+        seen.append(health_user_id)
+        return await original(health_user_id, data_type, start, end)
+
+    monkeypatch.setattr(backfill, "backfill_one_type", recording)
+    monkeypatch.setattr(backfill, "_user_ids", lambda: ["someone-else", "named"])
+
+    await backfill.backfill_recent.fn(health_user_id="named")
+
+    assert set(seen) == {"named"}
+    assert [user for user, _ in flow["rollups"]] == ["named"]

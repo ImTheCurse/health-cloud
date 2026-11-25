@@ -268,3 +268,15 @@ hours the backfill wrote, created the same way the fetcher creates one.
 **A manual run** can reach further back with the `window_hours` parameter, from
 the Prefect UI or `prefect deployment run backfill-recent/recent -p
 window_hours=72`.
+
+**The dashboard's "Backfill today" button** starts the same deployment for the
+signed-in user only, through the flow's `health_user_id` parameter, with the
+default 24-hour window. `POST /backfill` creates the run over Prefect's REST API
+and returns its id; `GET /backfill/{run_id}` reads the run and answers
+`running`, `completed` or `failed` (*Failed*, *Crashed* and *Cancelled* are
+failures; every other state is still running). It answers 404 for a run that
+is not the signed-in user's, and 503 when Prefect cannot be reached. The
+dashboard asks every 10 seconds and refreshes every chart once the run has
+completed. A click while another run is going is queued behind it by the
+deployment's concurrency limit, so it costs a wait, never a second set of
+requests in parallel.

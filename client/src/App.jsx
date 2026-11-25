@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
+import BackfillButton from "./BackfillButton.jsx";
 import SignalField from "./SignalField.jsx";
 import { API_BASE, connectUrl, fetchAccount, signOut } from "./api.js";
 import Dashboard from "./dashboard/Dashboard.jsx";
@@ -117,6 +118,7 @@ function AccountStrip({ account, onConnect, onSignOut }) {
       <button type="button" className="link" onClick={onConnect}>
         {account.needs_reconsent ? "Reconnect" : "Renew"}
       </button>
+      {!account.needs_reconsent && <BackfillButton />}
       <button type="button" className="link" onClick={onSignOut}>
         Sign out
       </button>
