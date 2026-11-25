@@ -21,6 +21,7 @@ from server.models.user import User
 from tests.google_data import (
     interval_point,
     live_daily_summary_point,
+    live_exercise_point,
     sample_point,
     session_point,
 )
@@ -332,6 +333,107 @@ def test_a_point_outside_the_window_is_not_written(captured_upserts):
 
     assert (result.written, result.skipped) == (0, 1)
     assert rows == []
+
+
+def test_a_session_that_began_before_the_window_is_written(captured_upserts):
+    """A notification can name a window that starts partway through a session,
+    as a workout's mid-session updates do. The session overlaps the window, so it
+    is the data the notification is about."""
+    rows, _ = captured_upserts
+    fetcher, _, _ = fetcher_over(FakeTransport([page([session_point()])]))
+
+    result = fetcher.fetch_interval(
+        user=a_user(),
+        data_type="sleep",
+        start=dt.datetime(2026, 1, 2, tzinfo=dt.UTC),
+        end=dt.datetime(2026, 1, 2, 12, tzinfo=dt.UTC),
+    )
+
+    assert (result.written, result.skipped) == (1, 0)
+    assert len(rows) == 1
+
+
+# --- the workout of 2026-11-25, as Google listed it and notified about it ---
+
+#: The session as Google lists it once finished.
+WORKOUT_START = "2026-11-25T04:16:06Z"
+WORKOUT_END = "2026-11-25T04:46:27Z"
+#: The session before it, which was the newest Google listed during the workout.
+PREVIOUS_START = "2026-11-24T18:50:46Z"
+PREVIOUS_END = "2026-11-24T19:20:54Z"
+#: The two windows Google notified while the workout was running. Both start
+#: when the workout did, and both end before it finished.
+FIRST_NOTIFIED = (
+    dt.datetime(2026, 11, 25, 4, 16, 6, tzinfo=dt.UTC),
+    dt.datetime(2026, 11, 25, 4, 16, 11, 90717, tzinfo=dt.UTC),
+)
+SECOND_NOTIFIED = (
+    dt.datetime(2026, 11, 25, 4, 16, 6, tzinfo=dt.UTC),
+    dt.datetime(2026, 11, 25, 4, 31, 23, 646710, tzinfo=dt.UTC),
+)
+
+
+def fetch_exercise(points, window):
+    fetcher, _, _ = fetcher_over(FakeTransport([page(points)]))
+    start, end = window
+    return fetcher.fetch_interval(
+        user=a_user(), data_type="exercise", start=start, end=end
+    )
+
+
+@pytest.mark.parametrize("window", [FIRST_NOTIFIED, SECOND_NOTIFIED])
+def test_the_listed_workout_is_kept_for_either_notified_window(
+    captured_upserts, window
+):
+    """Each notified window covers only part of the session, which runs on past
+    the window's end. Listed, the session is written."""
+    rows, _ = captured_upserts
+
+    result = fetch_exercise(
+        [
+            live_exercise_point(WORKOUT_START, WORKOUT_END),
+            live_exercise_point(PREVIOUS_START, PREVIOUS_END),
+        ],
+        window,
+    )
+
+    assert (result.written, result.skipped) == (1, 1)
+    assert rows[0].start_ts == dt.datetime(2026, 11, 25, 4, 16, 6, tzinfo=dt.UTC)
+
+
+@pytest.mark.parametrize("window", [FIRST_NOTIFIED, SECOND_NOTIFIED])
+def test_a_workout_google_does_not_list_yet_cannot_be_kept(captured_upserts, window):
+    """What the server saw during the workout: Google's newest session was the
+    one before it, so nothing was written. Only a fetch after the session is
+    listed can store it, which a notification-driven fetch never makes."""
+    rows, _ = captured_upserts
+
+    result = fetch_exercise(
+        [live_exercise_point(PREVIOUS_START, PREVIOUS_END)], window
+    )
+
+    assert (result.written, result.skipped) == (0, 1)
+    assert rows == []
+
+
+def test_the_workout_is_kept_by_a_fetch_after_it_is_listed(captured_upserts):
+    """A fetch over the morning, after Google listed the finished session, the
+    way a scheduled backfill would."""
+    rows, _ = captured_upserts
+
+    result = fetch_exercise(
+        [
+            live_exercise_point(WORKOUT_START, WORKOUT_END),
+            live_exercise_point(PREVIOUS_START, PREVIOUS_END),
+        ],
+        (
+            dt.datetime(2026, 11, 25, 4, tzinfo=dt.UTC),
+            dt.datetime(2026, 11, 25, 5, tzinfo=dt.UTC),
+        ),
+    )
+
+    assert (result.written, result.skipped) == (1, 1)
+    assert len(rows) == 1
 
 
 def test_a_daily_summary_outside_the_window_is_not_written(captured_upserts):

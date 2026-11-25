@@ -275,6 +275,37 @@ def test_a_point_with_no_time_is_kept():
     assert within(None, START, END)
 
 
+def test_a_session_running_into_the_window_is_kept():
+    """A workout that began before the notified window and ends inside it is the
+    workout the notification is about, so dropping it on its start time loses it."""
+    assert within(
+        dt.datetime(2026, 1, 1, 22, tzinfo=dt.UTC),
+        START,
+        END,
+        point_end=dt.datetime(2026, 1, 2, 6, tzinfo=dt.UTC),
+    )
+
+
+def test_a_session_spanning_the_whole_window_is_kept():
+    assert within(
+        dt.datetime(2026, 1, 1, 22, tzinfo=dt.UTC),
+        START,
+        END,
+        point_end=dt.datetime(2026, 1, 4, tzinfo=dt.UTC),
+    )
+
+
+def test_a_session_ending_as_the_window_opens_is_not():
+    """Half-open on both sides, so a session touching the window is not in it."""
+    assert not within(
+        dt.datetime(2026, 1, 1, 22, tzinfo=dt.UTC), START, END, point_end=START
+    )
+
+
+def test_a_session_starting_as_the_window_closes_is_not():
+    assert not within(END, START, END, point_end=END + dt.timedelta(hours=1))
+
+
 def test_a_daily_summary_is_narrowed_by_its_civil_date():
     assert within(None, START, END, dt.date(2026, 1, 2))
     assert within(None, START, END, dt.date(2026, 1, 1))
@@ -374,6 +405,24 @@ def test_an_unfiltered_read_stops_once_it_is_past_the_window():
     fetch(transport, "brand_new_type")
 
     assert len(transport.requests) == 1
+
+
+def test_an_unfiltered_read_continues_past_a_session_running_into_the_window():
+    """A page whose points all began before the window can still hold one that
+    ends inside it, and older pages may hold more, so the stop goes by end time."""
+    running = old_point("running")
+    running["brand_new_type"]["interval"]["startTime"] = "2026-01-01T23:00:00Z"
+    running["brand_new_type"]["interval"]["endTime"] = "2026-01-02T01:00:00Z"
+    transport = FakeTransport(
+        [
+            page([running], next_token="p2"),
+            page([old_point("b")], next_token="p3"),
+        ]
+    )
+
+    fetch(transport, "brand_new_type")
+
+    assert len(transport.requests) == 2
 
 
 def test_a_filtered_read_is_not_cut_short():

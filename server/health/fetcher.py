@@ -127,7 +127,11 @@ class Fetcher:
             deleted=deleted,
         )
         logger.info(
-            "fetched {} for user {}", result, hashed_log_id(user.health_user_id)
+            "fetched {} over {} to {} for user {}",
+            result,
+            start.isoformat(),
+            end.isoformat(),
+            hashed_log_id(user.health_user_id),
         )
         return result
 
@@ -227,7 +231,9 @@ class Fetcher:
             )
             # An unfiltered type must be narrowed here rather than by Google.
             # Daily summaries carry only a civil date, not a physical timestamp.
-            if not within(row.start_ts, start, end, row.civil_date):
+            if not within(
+                row.start_ts, start, end, row.civil_date, point_end=row.end_ts
+            ):
                 skipped += 1
                 continue
 

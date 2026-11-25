@@ -192,6 +192,30 @@ def live_interval_point(
     }
 
 
+def live_exercise_point(start: str, end: str) -> dict[str, Any]:
+    """An ``exercise`` session in the shape the real API lists it.
+
+    Unlike the other fixtures, the times passed in are real: they reproduce a
+    workout the server failed to store. Everything else is invented and
+    measurement fields are left out, because only the interval is under test.
+    """
+    return {
+        "dataSource": {
+            "recordingMethod": "RECORDING_METHOD_ACTIVELY_RECORDED",
+            "device": {"displayName": "Invented Watch"},
+            "platform": "PLATFORM_ANDROID",
+        },
+        "exercise": {
+            "interval": {
+                "startTime": start,
+                "startUtcOffset": "7200s",
+                "endTime": end,
+                "endUtcOffset": "7200s",
+            },
+        },
+    }
+
+
 def live_daily_summary_point(data_type: str = "daily-resting-heart-rate") -> dict[str, Any]:
     """A daily summary: a **fourth** time shape, carrying a bare ``date``.
 

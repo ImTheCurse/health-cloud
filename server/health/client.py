@@ -276,16 +276,18 @@ class HealthDataClient:
 
 
 def _entirely_before(points: list[Any], start: dt.datetime) -> bool:
-    """Whether every point on this page falls before the window.
+    """Whether every point on this page ends before the window.
 
-    Daily summaries have only a civil date. Allow one day on either side of
-    the UTC window for the user's unknown offset. An unreadable point prevents
-    an early stop: we cannot prove that everything on the page is too old.
+    A point's end is what counts, so a session that began before the window
+    and runs into it keeps the read going. Daily summaries have only a civil
+    date. Allow one day on either side of the UTC window for the user's unknown
+    offset. An unreadable point prevents an early stop: we cannot prove that
+    everything on the page is too old.
     """
     if not points:
         return False
     for point in points:
-        moment = _point_time(point)
+        moment = _point_end(point)
         if moment is not None:
             if moment >= start:
                 return False
@@ -296,8 +298,11 @@ def _entirely_before(points: list[Any], start: dt.datetime) -> bool:
     return True
 
 
-def _point_time(point: Any) -> dt.datetime | None:
-    """A point's own time, wherever its shape keeps it."""
+def _point_end(point: Any) -> dt.datetime | None:
+    """The latest moment a point covers, wherever its shape keeps it.
+
+    An interval's end, or its start when Google omits the end; a sample's time.
+    """
     if not isinstance(point, dict):
         return None
     for key, payload in point.items():
@@ -307,7 +312,9 @@ def _point_time(point: Any) -> dt.datetime | None:
             continue
         interval = payload.get("interval")
         if isinstance(interval, dict):
-            return parse_timestamp(interval.get("startTime"))
+            return parse_timestamp(interval.get("endTime")) or parse_timestamp(
+                interval.get("startTime")
+            )
         sample = payload.get("sampleTime")
         if isinstance(sample, dict):
             return parse_timestamp(sample.get("physicalTime"))
@@ -372,14 +379,23 @@ def within(
     start: dt.datetime,
     end: dt.datetime,
     civil_date: dt.date | None = None,
+    point_end: dt.datetime | None = None,
 ) -> bool:
     """Whether an unfiltered point falls in the requested window.
+
+    A point that covers a span of time is kept when the span overlaps the
+    window, both half-open. A notification about an exercise session can name a
+    window that starts partway through the session, and the session is still
+    what the notification is about. A point with only a start is kept when the
+    start is in the window.
 
     Daily summaries have no physical timestamp; their civil date is compared
     with one day's margin for an unknown UTC offset. A point with neither is
     kept rather than discarded on the strength of a field Google may omit.
     """
     if point_start is not None:
+        if point_end is not None and point_end > point_start:
+            return point_start < end and point_end > start
         return start <= point_start < end
     if civil_date is not None:
         return (

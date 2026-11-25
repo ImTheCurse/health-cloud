@@ -126,9 +126,22 @@ A type with no known field is fetched **unfiltered and narrowed locally**. A gue
 would be worse: a wrong field name is a 400, and a wrong-but-valid one silently
 filters on something else.
 
+**A point that covers a span is kept when the span overlaps the window**, not only
+when it starts inside it, so a session is never dropped for having begun before the
+window named in its notification. A point with only a start, such as a sample, is
+kept when its start is in the window.
+
+**An `exercise` session is not listed while it is running.** Google notifies during
+a workout with windows that start when the session did and end at the time of the
+update, but `list` returns the session only once it is finished, and no notification
+follows for the finished session. A notification-driven fetch therefore stores
+nothing for the workout; only a later fetch over the same window does, which is
+what the scheduled backfill is for.
+
 **Results come back newest first**, which is what makes unfiltered fetching viable:
-once a page falls entirely before the window, everything after it is older still and
-paging stops. Date-only daily summaries use their bare civil `date` for the same
+once a page ends entirely before the window, everything after it is older still and
+paging stops. A point's end time decides this, so a session running into the window
+keeps the read going. Date-only daily summaries use their bare civil `date` for the same
 check, with a day's margin for the unknown UTC offset; otherwise they can hit the
 50-page safety limit while paging through history. Without the stop, fetching one
 hour of `heart-rate` walks the user's whole history.
