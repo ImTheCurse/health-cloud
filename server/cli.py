@@ -30,9 +30,8 @@ from sqlmodel import Session, SQLModel, select
 
 from server.config.settings import get_settings
 from server.db.session import get_session, reset_tables
-from server.health.const import FILTER_FIELDS, LIST_UNSUPPORTED
+from server.health.backfill import backfill_type, backfill_types
 from server.health.error import HealthApiError
-from server.health.fetcher import Fetcher
 from server.models.datapoint import (
     ObservationSampleTime,
     ObservationTimeInterval,
@@ -51,7 +50,6 @@ from server.rollup.const import MAX_UTC_OFFSET, ROLLED_UP_TYPES
 from server.rollup.hours import HeartRateHours, HourSpan
 from server.webhooks.const import (
     DATA_TYPES,
-    SYSTEM_EVENTS,
     WEBHOOK_PATH,
     SubscriptionPolicy,
 )
@@ -164,17 +162,8 @@ def db_reset_measurements(args: argparse.Namespace) -> None:
 def backfill_run(args: argparse.Namespace) -> None:
     """Fetch a window nobody notified us about.
 
-    **Two strategies, by whether Google can filter the type by time.**
-
-    A filterable type is fetched a day at a time: each request asks Google for
-    exactly that day, so the cost is linear and a busy day stays well inside the
-    page limit. heart-rate alone is roughly 34,000 points, 7 pages, a day.
-
-    A type Google cannot filter always starts at "now" and pages backwards, so
-    a day at a time would re-read every newer day for each older one. Those take
-    one pass from now back to the start of the window instead, committing each
-    day as the pass leaves it, so a run interrupted halfway keeps every finished
-    day. Rerunning starts from "now" again and rewrites the same rows.
+    The strategy per type is in ``server.health.backfill``, shared with the
+    scheduled ``backfill-recent`` flow.
 
     Sequential by design. The limit is 300 requests a minute for one user, and a
     backfill over several types is the one thing here capable of reaching it.
@@ -188,10 +177,7 @@ def backfill_run(args: argparse.Namespace) -> None:
         fetcher = build_fetcher(session)
         print(f"backfilling {args.days} day(s) up to {end.date()} for {len(types)} type(s)")
         for data_type in types:
-            if data_type in FILTER_FIELDS or data_type == "floors":
-                _backfill_by_day(fetcher, user, data_type, start, end)
-            else:
-                _backfill_in_one_pass(fetcher, user, data_type, start, end)
+            backfill_type(fetcher, user, data_type, start, end, progress=_print)
         health_user_id = user.health_user_id
 
     if ROLLED_UP_TYPES & set(types):
@@ -250,73 +236,8 @@ def rollup_rebuild(args: argparse.Namespace) -> None:
     print(f"rebuilt {written} hour(s)")
 
 
-def _backfill_by_day(
-    fetcher: Fetcher, user: User, data_type: str, start: dt.datetime, end: dt.datetime
-) -> None:
-    """One request per day, for a type Google filters by time."""
-    written = segments = 0
-    # Floor rollups are civil-day aggregates. Align their windows to midnight so
-    # adjacent backfill days do not fetch the same day twice.
-    if data_type == "floors":
-        start = dt.datetime.combine(start.date(), dt.time(), tzinfo=dt.UTC)
-    for day_start, day_end in _days(start, end):
-        result = fetcher.fetch_interval(
-            user=user, data_type=data_type, start=day_start, end=day_end
-        )
-        if result.unsupported:
-            break
-        written += result.written
-        segments += result.segments
-        print(f"  {data_type} {day_start.date()}: {result.written} points", flush=True)
-    print(f"  {data_type}: {written} points, {segments} segments in total", flush=True)
-
-
-def _backfill_in_one_pass(
-    fetcher: Fetcher, user: User, data_type: str, start: dt.datetime, end: dt.datetime
-) -> None:
-    """One backward pass over the whole window, for a type Google cannot filter."""
-
-    def report(day: dt.date, written: int) -> None:
-        print(f"  {data_type} {day}: {written} points", flush=True)
-
-    result = fetcher.backfill_window(
-        user=user, data_type=data_type, start=start, end=end, on_day=report
-    )
-    if result.unsupported:
-        print(f"  {data_type}: not readable with list, skipped", flush=True)
-        return
-    print(
-        f"  {data_type}: {result.written} points, {result.segments} segments in total",
-        flush=True,
-    )
-
-
-def backfill_types() -> tuple[str, ...]:
-    """Every subscribed type there is something to fetch for.
-
-    The account events carry no data, and the types Google serves no ``list``
-    for would only be skipped one by one -- except ``floors``, which has a
-    rollup path of its own.
-    """
-    return tuple(
-        data_type
-        for data_type in DATA_TYPES
-        if data_type not in SYSTEM_EVENTS
-        and (data_type not in LIST_UNSUPPORTED or data_type == "floors")
-    )
-
-
-def _days(
-    start: dt.datetime, end: dt.datetime
-) -> list[tuple[dt.datetime, dt.datetime]]:
-    """``[start, end)`` split into windows of at most a day, oldest first."""
-    windows = []
-    cursor = start
-    while cursor < end:
-        following = min(cursor + dt.timedelta(days=1), end)
-        windows.append((cursor, following))
-        cursor = following
-    return windows
+def _print(line: str) -> None:
+    print(line, flush=True)
 
 
 def _only_user(requested: str | None, session: Session) -> User:

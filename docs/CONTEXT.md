@@ -176,17 +176,35 @@ Progress marker — tick a box only when the step is genuinely complete.
       those from samples. A 90-day read went from 664,358 rows in 27 s to 1,336
       in 0.07 s. A backfill's rollup run was seen completing in Prefect. 501
       tests.
-- [ ] **9. Containers and published images** — **in progress.** The API,
+- [x] **9. Containers and published images** — the API,
       the Prefect worker and the client in `docker-compose.yml`; versioned
       images published to GHCR by CI; health checks that restart a hung
       container; the receiver finding the fetcher deployment by name. See
-      [Operations](operations.md#containers)
-- [ ] **10. Cutover to cloudflared** — subscriber PATCH to the self-hosted
-      URL; the server's update timer and boot unit, kept with its other
-      services
-- [ ] **11. Prefect schedule** — Daily 7-day `:reconcile`
-      flow that also rebuilds the last 7 days of hourly heart-rate summaries,
-      + push alerting on token expiry and on failed or crashed rollup runs
+      [Operations](operations.md#containers) — *done 2026-11-24.*
+- [x] **10. Cutover to cloudflared** — the self-hosted server receives
+      webhooks through the cloudflared tunnel; the server's update timer and
+      boot unit are kept with its other services — *done 2026-11-24.* The
+      production subscriber is `health-cloud-prod`, created fresh against the
+      tunnelled URL. Repointing an existing subscriber with PATCH passes the
+      handshake, but Google keeps delivering some of that subscriber's
+      notifications to the old endpoint for hours, and a repointed subscriber
+      can stop receiving deliveries altogether; a newly created one received
+      deliveries within three minutes. Moving the endpoint therefore means
+      creating a new subscriber and deleting the old one. Every delivery is
+      visible in Cloud Logging under
+      `logs/health.googleapis.com%2Fwebhook_notification`, labelled by
+      `subscriber_id`: successes at INFO, failures at WARNING.
+- [ ] **11. Prefect schedule** — **in progress.** The hourly backfill is
+      built: `backfill-recent` fetches the last 24 hours every hour on a
+      Prefect schedule, so data whose notification never arrived is fetched
+      anyway. See
+      [Orchestration](orchestration.md#the-scheduled-backfill). Webhooks are the fast path
+      and the schedule is the safety net: notifications sent to a dead or stale
+      endpoint are lost once Google stops retrying, and a new subscriber is
+      never notified about data that synced before it existed. Plus a daily
+      7-day `:reconcile` flow that also rebuilds the last 7 days of hourly
+      heart-rate summaries, and push alerting on token expiry and on failed or
+      crashed rollup runs
 
 Step 3 precedes step 4 deliberately: verification logic is tested against
 fixtures before Google is ever pointed at the endpoint.

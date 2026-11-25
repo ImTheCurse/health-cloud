@@ -1,5 +1,6 @@
 """Constants for triggering flow runs."""
 
+import datetime as dt
 from typing import Final
 
 #: Short on purpose. The trigger runs after the response has already been sent,
@@ -26,3 +27,16 @@ ROLLUP_DEPLOYMENT: Final = f"rollup-heart-rate/{ROLLUP_DEPLOYMENT_NAME}"
 
 #: Prefect's REST path for reading a deployment by its flow and deployment name.
 DEPLOYMENT_BY_NAME_PATH: Final = "/deployments/name/{name}"
+
+#: The scheduled backfill's deployment name, served by the fetcher flow's process.
+BACKFILL_DEPLOYMENT_NAME: Final = "recent"
+
+#: Every hour, on the hour, in Prefect's cron notation. Prefect's scheduler
+#: creates the runs, so nothing on the host needs a timer.
+BACKFILL_SCHEDULE: Final = "0 * * * *"
+
+#: How far back each scheduled backfill reaches. Google lists a workout only
+#: once it is finished and sends no notification for the finished session, and
+#: a phone can upload hours late, so the window is a day rather than the hour
+#: between runs: anything listed within a day is fetched by roughly 23 runs.
+BACKFILL_WINDOW: Final = dt.timedelta(days=1)

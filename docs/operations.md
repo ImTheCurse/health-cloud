@@ -19,8 +19,14 @@ subscriber, exposing the endpoint through a tunnel, and where failures surface.
   re-verification each session.
 - **Production:** cloudflared on the self-hosted server. Cutover is one
   subscriber PATCH plus one handshake.
-- **Ops surfaces:** Prefect's own UI for fetch failures, push notifications for
-  token expiry. No separate status page — it would be redundant.
+- **Ops surfaces:** Prefect's own UI for fetch and backfill failures, push
+  notifications for token expiry. No separate status page — it would be
+  redundant. The UI is bound to the server's localhost (it has no
+  authentication), so it is reached through an SSH tunnel:
+  `ssh -L 4200:localhost:4200 ssh-cloud`, then `http://localhost:4200`. The
+  hourly `backfill-recent/recent` runs are listed under its deployment; a
+  failed one is marked *Failed* and names the types it could not fetch. See
+  [Orchestration](orchestration.md#the-scheduled-backfill).
 
 ## Containers
 

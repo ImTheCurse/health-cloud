@@ -225,3 +225,46 @@ process.
 request into a Prefect event, are a Cloud feature. Events and automations are in
 the open-source server; the webhook receiver is not. Nothing in this design needs
 it — Google talks to our own endpoint — but it is worth not rediscovering.
+
+### The scheduled backfill
+
+`backfill-recent` fetches the last 24 hours of every type for every consented
+user, **every hour**. It is a Prefect deployment, `backfill-recent/recent`,
+served by the worker beside the fetcher and the rollup, with a Prefect schedule
+of `0 * * * *`; Prefect's scheduler service (`prefect-services`) creates the
+runs, so nothing on the host needs a timer.
+
+**Why it exists.** Webhooks are the fast path, and they miss things. Google
+lists an `exercise` session only once it is finished and sends no notification
+for the finished session, so a workout is never stored by a notification-driven
+fetch. Notifications sent to an endpoint that is down are lost once Google stops
+retrying, and a new subscriber is never told about data that synced before it
+existed. See [Ingestion](ingestion.md).
+
+**Why a day, run every hour.** A phone can upload hours after the activity, and a
+finished workout was seen listed nearly two hours after it ended. With a
+24-hour window run hourly, anything Google lists within a day is fetched by
+about 23 runs. A session crossing the window's edge is kept, because the fetcher
+keeps a session that *overlaps* the window. Data that reaches Google more than a
+day late is left to the daily 7-day `:reconcile`.
+
+**Types run one after another, never in parallel**, because of Google's rate
+limit of 300 requests a minute per user. A run makes roughly 30 to 60 requests,
+and heart-rate alone pages through about 40,000 points. The deployment's
+`concurrency_limit=1` keeps a slow run from overlapping the next hour's for the
+same reason. A full run measured 2 min 20 s on 2026-11-25.
+
+**One task per type**, using the same strategy as `backfill run`
+(`server/health/backfill.py`): a day at a time for a type Google filters, one
+backward pass for one it does not. The Prefect UI shows each type's task, so a
+failure names its type. **A failed type does not stop the others**; the run is
+marked *Failed* at the end with the failed types in its message. **An expired
+token stops the run at once**, since every type would fail the same way. Tasks
+are not retried: the next run, an hour later, covers the same window.
+
+**Heart-rate hours are rebuilt** by one `rollup-heart-rate` run per user over the
+hours the backfill wrote, created the same way the fetcher creates one.
+
+**A manual run** can reach further back with the `window_hours` parameter, from
+the Prefect UI or `prefect deployment run backfill-recent/recent -p
+window_hours=72`.

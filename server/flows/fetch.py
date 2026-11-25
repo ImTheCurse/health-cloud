@@ -37,11 +37,14 @@ from prefect.deployments import arun_deployment
 
 from server.config.settings import get_settings
 from server.db.session import get_session
+from server.flows.backfill import backfill_recent
 from server.flows.rollup import rollup_heart_rate
 from server.health.error import TokenExpiredError
 from server.health.fetcher import FetchResult
 from server.observability.util import hashed_log_id
 from server.orchestration.const import (
+    BACKFILL_DEPLOYMENT_NAME,
+    BACKFILL_SCHEDULE,
     FETCHER_DEPLOYMENT_NAME,
     ROLLUP_DEPLOYMENT,
     ROLLUP_DEPLOYMENT_NAME,
@@ -229,21 +232,31 @@ async def _handle(payload: dict[str, Any]) -> None:
 
 
 def deploy() -> None:
-    """Register both deployments and serve them.
+    """Register the deployments and serve them.
 
     ``serve()`` rather than a work pool and a separate worker: this is a
     single-user deployment, and a work pool adds a second process and a second
     state machine to manage for no benefit at this size. The process this starts
     both registers the deployment and executes its runs.
 
-    The receiver and the backfill find both deployments by name, so nothing
-    printed here needs copying into a setting.
+    The receiver and the backfill find the fetcher and rollup deployments by
+    name, so nothing printed here needs copying into a setting.
+
+    The scheduled backfill runs on a Prefect schedule, which Prefect's scheduler
+    service turns into runs. ``concurrency_limit=1`` keeps a slow run from
+    overlapping the next hour's, which would double the requests against
+    Google's rate limit.
     """
     # to_deployment returns a coroutine only when called from async code; here
     # it is synchronous, which its signature cannot express.
     serve(
         fetch_notifications.to_deployment(name=FETCHER_DEPLOYMENT_NAME),  # type: ignore[arg-type]
         rollup_heart_rate.to_deployment(name=ROLLUP_DEPLOYMENT_NAME),  # type: ignore[arg-type]
+        backfill_recent.to_deployment(  # type: ignore[arg-type]
+            name=BACKFILL_DEPLOYMENT_NAME,
+            cron=BACKFILL_SCHEDULE,
+            concurrency_limit=1,
+        ),
     )
 
 

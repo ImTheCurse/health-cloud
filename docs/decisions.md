@@ -50,9 +50,10 @@ user, rather than assuming.
   *write* cannot swap encrypted values between rows undetected
 - **Backfill as a durable workflow.** `backfill run` is a CLI that runs in the
   foreground: an interrupted run keeps every committed day but restarts from
-  "now", and nothing retries it or records how far it got. It belongs in a
-  Prefect flow alongside the step 11 `:reconcile` schedule, with per-type
-  progress, retries and a resumable cursor
+  "now", and nothing retries it or records how far it got. The hourly
+  `backfill-recent` flow covers the last day on a schedule; a long backfill
+  still runs from the CLI. Making that one durable means per-type progress,
+  retries and a resumable cursor
 - **Filter fields for more types.** Only five types have a verified filter
   field. Probing the others would let them be fetched a day at a time, which is
   cheaper still than one backward pass

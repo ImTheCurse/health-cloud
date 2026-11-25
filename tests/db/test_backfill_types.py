@@ -1,6 +1,6 @@
 """Which types a backfill fetches when none are named."""
 
-from server.cli import backfill_types
+from server.health.backfill import backfill_types
 from server.health.const import LIST_UNSUPPORTED
 from server.webhooks.const import DATA_TYPES, SYSTEM_EVENTS
 

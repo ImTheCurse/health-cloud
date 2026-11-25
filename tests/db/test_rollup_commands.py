@@ -32,8 +32,7 @@ def offline(monkeypatch):
     monkeypatch.setattr(cli, "get_session", FakeSession)
     monkeypatch.setattr(cli, "_only_user", lambda requested, session: FakeUser())
     monkeypatch.setattr(cli, "build_fetcher", lambda session: None)
-    monkeypatch.setattr(cli, "_backfill_by_day", lambda *args: None)
-    monkeypatch.setattr(cli, "_backfill_in_one_pass", lambda *args: None)
+    monkeypatch.setattr(cli, "backfill_type", lambda *args, **kwargs: None)
 
     runs: list[dict] = []
 
